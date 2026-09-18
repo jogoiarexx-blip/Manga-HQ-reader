@@ -1,3 +1,9 @@
+## v4.0.0
+- redesign visual completo: interface mais bonita, moderna e premium
+- hero, cards, coleção, toolbar, sidebar e modais refeitos
+- melhorias de contraste, sombras, gradientes e glassmorphism
+- refinamento visual do leitor e da versão mobile
+
 # Changelog
 
 ## 3.1.0

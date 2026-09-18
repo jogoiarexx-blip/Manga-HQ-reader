@@ -1,4 +1,4 @@
-# Manga HQ Reader — GitHub Pages v3.1.0
+# Manga HQ Reader — GitHub Pages v4.0.0
 
 Leitor estático de mangás/HQs feito para rodar diretamente no GitHub Pages, sem Node.js, Express ou servidor próprio.
 
@@ -67,3 +67,14 @@ Essas dependências são armazenadas pelo service worker depois do primeiro uso 
 ## Limitação atual do PDF
 
 PDF público usa o preview do Google Drive. Por isso o app não recebe o número exato da página lida dentro do iframe; o progresso do PDF é aproximado e existe o botão **Marcar lido**. Um leitor PDF próprio (PDF.js) é a evolução indicada para progresso real por página.
+
+
+### Novidades visuais da v4.0.0
+
+- visual redesenhado com estilo mais moderno e premium
+- topo e painéis com efeito glassmorphism
+- hero principal mais bonito com destaque visual e tags rápidas
+- cards de HQs e coleções com sombras, gradientes e hover mais elegante
+- biblioteca com aparência mais limpa no PC e no celular
+- modais, avisos e leitor com acabamento visual mais refinado
+- mesma base funcional da v3.1.0, mas com interface mais bonita
