@@ -1,0 +1,15 @@
+MANGA HQ READER v3.1.0 — GITHUB PAGES
+
+1. Extraia o ZIP.
+2. Envie TODO o conteúdo desta pasta para a raiz do repositório Manga-HQ-Reader.
+3. Confirme que index.html, js/, css/, data/, sw.js, manifest.webmanifest, icon-192.png e icon-512.png estão na raiz.
+4. GitHub > Settings > Pages.
+5. Source: Deploy from a branch.
+6. Branch: main.
+7. Folder: /(root).
+8. Save.
+
+Endereço esperado:
+https://luispauloalves500.github.io/Manga-HQ-Reader/
+
+Ao atualizar de uma versão anterior, abra o site e recarregue. O service worker v3.1 remove caches antigos ao ativar.
