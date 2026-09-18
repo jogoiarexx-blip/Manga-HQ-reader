@@ -1,4 +1,4 @@
-# Manga HQ Reader — GitHub Pages v5.3.0
+# Manga HQ Reader — GitHub Pages v5.4.0
 
 Leitor estático de mangás/HQs feito para rodar diretamente no GitHub Pages, sem Node.js, Express ou servidor próprio.
 
@@ -88,7 +88,7 @@ PDF público usa o preview do Google Drive. Por isso o app não recebe o número
 - arquivo local também pode ser salvo novamente pelo botão de download
 
 
-## Leitura offline (v5.3.0)
+## Leitura offline (v5.4.0)
 
 - Use o botão de nuvem nos cards para salvar PDF/CBR/CBZ no próprio navegador.
 - A aba **Offline** mostra somente os arquivos disponíveis sem internet.
@@ -124,3 +124,11 @@ PDFs agora são renderizados com PDF.js: o app salva a página exata, percentual
 
 ### Otimização v5.2
 O leitor possui modo de desempenho Automático, Econômico e Qualidade máxima. No Automático, celulares com pouca RAM/CPU recebem cache menor, renderização PDF mais leve e descarregamento de páginas distantes para reduzir travamentos e consumo de bateria.
+
+
+## v5.4.0 — Batcaverna como fonte externa
+
+- adiciona **Batcaverna — Acervo Externo** à janela de fontes;
+- mantém as duas bibliotecas pessoais sincronizadas separadamente;
+- oferece botões para abrir o site oficial e o Drive externo;
+- não copia nem redistribui os arquivos externos dentro do projeto.

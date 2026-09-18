@@ -1037,7 +1037,9 @@ $('#backCollectionsBtn').addEventListener('click', () => { state.collection = ''
 $('#refreshBtn').addEventListener('click', loadLibrary);
 function openDriveModal() {
   const urls = Array.isArray(CONFIG.folderUrls) && CONFIG.folderUrls.length ? CONFIG.folderUrls : [CONFIG.folderUrl].filter(Boolean);
-  $('#driveRoots').innerHTML = urls.map((url, i) => `<button class="drive-root" data-drive-url="${escapeHtml(url)}"><span>Biblioteca ${i + 1}</span><small>${escapeHtml(url)}</small><b>↗</b></button>`).join('');
+  $('#driveRoots').innerHTML = urls.map((url, i) => `<button class="drive-root" data-drive-url="${escapeHtml(url)}"><span>Biblioteca ${i + 1}</span><small>Google Drive próprio • sincronizado no app</small><b>↗</b></button>`).join('');
+  const external = Array.isArray(CONFIG.externalSources) ? CONFIG.externalSources : [];
+  $('#externalSources').innerHTML = external.length ? `<div class="source-section-title">Fontes externas</div>${external.map(src => `<article class="external-source-card"><div class="external-source-head"><div><span class="external-badge">EXTERNO</span><strong>${escapeHtml(src.name || 'Fonte externa')}</strong></div></div><p>${escapeHtml(src.note || 'Conteúdo hospedado em uma fonte externa.')}</p><div class="external-source-actions">${src.siteUrl ? `<button class="secondary-btn" data-external-url="${escapeHtml(src.siteUrl)}">Abrir site</button>` : ''}${src.driveUrl ? `<button data-external-url="${escapeHtml(src.driveUrl)}">Abrir acervo ↗</button>` : ''}</div></article>`).join('')}` : '';
   $('#driveModal').classList.remove('hidden');
 }
 function closeDriveModal() { $('#driveModal').classList.add('hidden'); }
@@ -1045,6 +1047,7 @@ $('#driveBtn').addEventListener('click', openDriveModal);
 $('#closeDriveModal').addEventListener('click', closeDriveModal);
 $('#driveModal').addEventListener('click', e => { if (e.target === $('#driveModal')) closeDriveModal(); });
 $('#driveRoots').addEventListener('click', e => { const b=e.target.closest('[data-drive-url]'); if (b) safeOpen(b.dataset.driveUrl); });
+$('#externalSources').addEventListener('click', e => { const b=e.target.closest('[data-external-url]'); if (b) safeOpen(b.dataset.externalUrl); });
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#noticeSettingsBtn').addEventListener('click', openSettings);
 $('#closeSettings').addEventListener('click', closeSettings);

@@ -336,3 +336,13 @@ a{color:inherit}
   .page-slot{border-radius:2px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+/* v5.4.0 — fontes externas */
+.external-sources{display:grid;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.source-section-title{font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.external-source-card{display:grid;gap:10px;padding:14px;border-radius:16px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(124,58,237,.08),rgba(255,255,255,.02))}
+.external-source-head>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.external-source-card strong{font-size:14px}.external-source-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.external-badge{display:inline-flex;align-items:center;min-height:22px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:.08em;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.32);color:#fbbf24}
+.external-source-actions{display:flex;gap:8px;flex-wrap:wrap}.external-source-actions button{flex:1 1 130px}
+@media(max-width:520px){.external-source-actions{display:grid;grid-template-columns:1fr}.external-source-actions button{width:100%}}

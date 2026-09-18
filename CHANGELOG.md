@@ -1,3 +1,10 @@
+## v5.4.0
+
+- adiciona Batcaverna como fonte externa separada;
+- botão para abrir site e acervo externo;
+- mantém as duas bibliotecas próprias sem misturar conteúdo externo;
+- atualiza PWA/cache para v5.4.0.
+
 ## v5.3.0
 - modo de desempenho Automático, Econômico e Qualidade máxima
 - cache de páginas adaptativo conforme celular/RAM/CPU
