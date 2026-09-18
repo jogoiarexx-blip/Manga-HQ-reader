@@ -2,8 +2,11 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
+  appVersion: '5.2.0',
+  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
+  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
-  folderUrl: 'https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g?usp=sharing',
+  folderUrl: 'https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
   driveApiKey: '',
   largeArchiveWarningMB: 180,
   pageCacheLimit: 12,
@@ -15,7 +18,8 @@ const LS = {
   progress: 'mhqr:progress',
   theme: 'mhqr:theme',
   apiKey: 'mhqr:driveApiKey',
-  prefs: 'mhqr:prefs'
+  prefs: 'mhqr:prefs',
+  catalog: 'mhqr:catalogCache'
 };
 
 const storageGet = key => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -30,19 +34,158 @@ const state = {
   items: [], filter: 'all', search: '', sort: 'name', current: null,
   pages: [], page: 0, mode: 'page', fit: 'contain', direction: 'ltr', zoom: 1, collection: '', archive: null,
   pageUrls: new Map(), pageUse: new Map(), verticalObserver: null,
-  verticalScrollHandler: null, renderToken: 0, openToken: 0, pdfObjectUrl: '', largePending: null,
-  downloadController: null, touchStart: null
+  verticalScrollHandler: null, renderToken: 0, openToken: 0, pdfObjectUrl: '', pdfDoc: null, pdfRenderTask: null, largePending: null,
+  readerDownloadController: null, offlineControllers: new Map(), touchStart: null, offlineIds: new Set(), offlineMeta: new Map(), offlineBusy: new Set()
 };
 
 const favorites = new Set(readJson(LS.fav, []));
 const progress = readJson(LS.progress, {});
-const prefs = { defaultMode: 'page', direction: 'ltr', ...readJson(LS.prefs, {}) };
+const prefs = { defaultMode: 'page', direction: 'ltr', performance: 'auto', ...readJson(LS.prefs, {}) };
 function savePrefs() { storageSet(LS.prefs, JSON.stringify(prefs)); }
+
+function performanceProfile() {
+  const mode = prefs.performance || 'auto';
+  const mobile = matchMedia('(max-width: 850px)').matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+  const memory = Number(navigator.deviceMemory || 0);
+  const cores = Number(navigator.hardwareConcurrency || 0);
+  const constrained = (memory && memory <= 4) || (cores && cores <= 4);
+  const eco = mode === 'eco' || (mode === 'auto' && mobile && constrained);
+  const quality = mode === 'quality';
+  return {
+    mode, mobile, eco, quality,
+    cacheLimit: eco ? 5 : (mobile && !quality ? 8 : Math.max(8, Number(CONFIG.pageCacheLimit || 12))),
+    pdfDpr: eco ? 1 : (mobile && !quality ? 1.35 : 2),
+    verticalWindow: eco ? 1 : (mobile && !quality ? 2 : 5),
+    observerMargin: eco ? 420 : (mobile && !quality ? 700 : 1200),
+    prefetch: !eco && document.visibilityState !== 'hidden'
+  };
+}
+function performanceLabel() {
+  const p = performanceProfile();
+  return p.eco ? 'Econômico' : (p.quality ? 'Qualidade' : 'Automático');
+}
+
 let installPrompt = null;
 let unrarModulePromise = null;
 let unrarWasmPromise = null;
 let jszipModulePromise = null;
+let pdfjsModulePromise = null;
 
+
+
+const OFFLINE_DB = { name: 'mhqr-offline-v1', version: 1, store: 'files' };
+function openOfflineDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(OFFLINE_DB.name, OFFLINE_DB.version);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(OFFLINE_DB.store)) db.createObjectStore(OFFLINE_DB.store, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('IndexedDB indisponível.'));
+  });
+}
+async function offlineDbAction(mode, fn) {
+  const db = await openOfflineDB();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(OFFLINE_DB.store, mode);
+      const store = tx.objectStore(OFFLINE_DB.store);
+      let value;
+      try { value = fn(store, resolve, reject); } catch (e) { reject(e); return; }
+      tx.oncomplete = () => { if (value !== undefined) resolve(value); };
+      tx.onerror = () => reject(tx.error || new Error('Falha no armazenamento offline.'));
+      tx.onabort = () => reject(tx.error || new Error('Operação offline cancelada.'));
+    });
+  } finally { db.close(); }
+}
+async function refreshOfflineIndex() {
+  try {
+    const rows = await offlineDbAction('readonly', (store, resolve, reject) => {
+      const req = store.getAll(); req.onsuccess = () => resolve(req.result || []); req.onerror = () => reject(req.error);
+    });
+    state.offlineIds = new Set(rows.map(r => r.id));
+    state.offlineMeta = new Map(rows.map(r => [r.id, { id:r.id, name:r.name, size:Number(r.size||r.blob?.size||0), mimeType:r.mimeType, modifiedTime:r.modifiedTime, folderPath:r.folderPath, resourceKey:r.resourceKey, savedAt:r.savedAt, offline:true }]));
+    return rows;
+  } catch (err) {
+    console.warn('Offline storage indisponível:', err);
+    state.offlineIds = new Set(); state.offlineMeta = new Map(); return [];
+  }
+}
+async function getOfflineRecord(id) {
+  if (!id) return null;
+  return offlineDbAction('readonly', (store, resolve, reject) => {
+    const req = store.get(id); req.onsuccess = () => resolve(req.result || null); req.onerror = () => reject(req.error);
+  });
+}
+async function deleteOfflineRecord(id) {
+  await offlineDbAction('readwrite', (store) => store.delete(id));
+  state.offlineIds.delete(id); state.offlineMeta.delete(id);
+  await updateOfflineStorageInfo(); render();
+}
+async function updateOfflineStorageInfo() {
+  const el = $('#offlineStorageInfo'); if (!el) return;
+  let total = 0; for (const m of state.offlineMeta.values()) total += Number(m.size || 0);
+  let quotaText = '';
+  try {
+    const est = await navigator.storage?.estimate?.();
+    if (est?.quota) quotaText = ` • navegador: ${bytes(est.usage || 0)} de ${bytes(est.quota)}`;
+  } catch {}
+  el.textContent = `${state.offlineIds.size} arquivo(s) • ${bytes(total)} salvos${quotaText}`;
+}
+async function ensureOfflineItem(item) {
+  if (!item) return item;
+  const id = item.offlineOriginId || item.id;
+  if (!state.offlineIds.has(id)) return item;
+  const rec = await getOfflineRecord(id);
+  if (!rec?.blob) return item;
+  return { ...item, id, name: rec.name || item.name, size: rec.size || rec.blob.size, mimeType: rec.mimeType || item.mimeType, localFile: rec.blob, offline: true, offlineOriginId: id };
+}
+async function saveItemOffline(item) {
+  if (!item) return;
+  const id = item.offlineOriginId || item.id;
+  if (state.offlineBusy.has(id)) return;
+  if (state.offlineIds.has(id)) { toast('Este arquivo já está disponível offline.'); return; }
+  state.offlineBusy.add(id); render();
+  try {
+    try { await navigator.storage?.persist?.(); } catch {}
+    let blob;
+    if (item.localFile) blob = item.localFile;
+    else {
+      try {
+        const est = await navigator.storage?.estimate?.();
+        const free = est?.quota ? Math.max(0, Number(est.quota) - Number(est.usage || 0)) : 0;
+        if (free && item.size && Number(item.size) * 1.12 > free) throw new Error(`Espaço insuficiente para salvar offline. Livre: ${bytes(free)}.`);
+      } catch (err) { if (/Espaço insuficiente/.test(err?.message || '')) throw err; }
+      if (!getApiKey()) toast('Preparando cópia offline. Se o Drive bloquear, configure a API Key.');
+      const data = await downloadDriveFile(item, -1, 'offline');
+      blob = new Blob([data], { type: item.mimeType || 'application/octet-stream' });
+    }
+    const record = { id, name:item.name, size:Number(item.size || blob.size), mimeType:item.mimeType || blob.type, modifiedTime:item.modifiedTime || '', folderPath:item.folderPath || '', resourceKey:item.resourceKey || '', savedAt:Date.now(), blob };
+    await offlineDbAction('readwrite', (store) => store.put(record));
+    state.offlineIds.add(id);
+    state.offlineMeta.set(id, { ...record, blob: undefined, offline:true });
+    toast('Salvo para leitura offline.');
+    await updateOfflineStorageInfo();
+  } catch (err) {
+    if (err?.name !== 'AbortError') toast(`Não foi possível salvar offline: ${err.message}`);
+  } finally { state.offlineBusy.delete(id); render(); }
+}
+async function toggleOfflineItem(item) {
+  const id = item?.offlineOriginId || item?.id; if (!id) return;
+  if (state.offlineIds.has(id)) {
+    if (!confirm(`Remover “${item.name}” da biblioteca offline?`)) return;
+    await deleteOfflineRecord(id); toast('Arquivo removido do offline.');
+  } else await saveItemOffline(item);
+}
+async function clearOfflineLibrary() {
+  for (const c of state.offlineControllers.values()) c.abort();
+  state.offlineControllers.clear();
+  if (!state.offlineIds.size) { toast('A biblioteca offline já está vazia.'); return; }
+  if (!confirm(`Remover ${state.offlineIds.size} arquivo(s) salvos offline?`)) return;
+  await offlineDbAction('readwrite', (store) => store.clear());
+  await refreshOfflineIndex(); await updateOfflineStorageInfo(); render(); toast('Biblioteca offline limpa.');
+}
 function saveFav() { storageSet(LS.fav, JSON.stringify([...favorites])); }
 function saveProgress() { storageSet(LS.progress, JSON.stringify(progress)); }
 function getApiKey() { return (storageGet(LS.apiKey) || CONFIG.driveApiKey || '').trim(); }
@@ -86,12 +229,44 @@ function uniqueItems(items) {
   return [...new Map(items.filter(x => x?.id && x?.name).map(x => [x.id, { ...x, size: Number(x.size || 0) }])).values()];
 }
 function thumbUrl(item) {
-  if (item.localFile) return '';
+  if (item.localFile && !item.thumbnailLink) return '';
   return item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w420`;
 }
-function driveViewUrl(item) { return `https://drive.google.com/file/d/${encodeURIComponent(item.id)}/view`; }
+function driveViewUrl(item) { const u = new URL(`https://drive.google.com/file/d/${encodeURIComponent(item.id)}/view`); if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey); return u.href; }
 function drivePreviewUrl(item) { return `https://drive.google.com/file/d/${encodeURIComponent(item.id)}/preview`; }
 function safeOpen(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
+function sanitizeFilename(name) {
+  return String(name || 'arquivo').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'arquivo';
+}
+function directDownloadUrl(item) {
+  if (!item || item.localFile) return '';
+  const u = new URL('https://drive.usercontent.google.com/download');
+  u.searchParams.set('id', item.id);
+  u.searchParams.set('export', 'download');
+  u.searchParams.set('confirm', 't');
+  if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey);
+  return u.href;
+}
+async function downloadItem(item) {
+  if (!item) return;
+  if (item.localFile) {
+    const url = URL.createObjectURL(item.localFile);
+    const a = document.createElement('a');
+    a.href = url; a.download = sanitizeFilename(item.name); a.style.display = 'none';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast('Download iniciado.');
+    return;
+  }
+  // Use navegação direta para o endpoint de download do Drive: o arquivo não precisa
+  // ser carregado inteiro na memória do celular, o que é importante para CBRs grandes.
+  const url = directDownloadUrl(item);
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.download = sanitizeFilename(item.name); a.style.display = 'none';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Download aberto pelo Google Drive.');
+}
 function archiveWarningLimitMB() {
   const configured = Math.max(40, Number(CONFIG.largeArchiveWarningMB || 180));
   const memory = Number(navigator.deviceMemory || 0);
@@ -103,12 +278,19 @@ function archiveWarningLimitMB() {
 async function loadStaticCatalog() {
   const r = await fetch('./data/catalog.json', { cache: 'no-store' });
   if (!r.ok) throw new Error(`Catálogo local: HTTP ${r.status}`);
-  return uniqueItems(await r.json());
+  const bundled = uniqueItems(await r.json());
+  const cached = readJson(LS.catalog, []);
+  return uniqueItems([...bundled, ...(Array.isArray(cached) ? cached : [])]);
+}
+function saveCatalogCache(items) {
+  const clean = uniqueItems(items).map(({ localFile, offline, ...item }) => item);
+  storageSet(LS.catalog, JSON.stringify(clean));
 }
 
 async function listDriveFolder(apiKey) {
   const fields = 'nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink,resourceKey)';
-  const queue = [{ id: CONFIG.folderId, path: '' }];
+  const roots = Array.isArray(CONFIG.folderIds) && CONFIG.folderIds.length ? CONFIG.folderIds : [CONFIG.folderId];
+  const queue = roots.filter(Boolean).map((id, index) => ({ id, path: `Biblioteca ${index + 1}` }));
   const seenFolders = new Set();
   const items = [];
   while (queue.length) {
@@ -152,18 +334,24 @@ async function loadLibrary() {
     if (key) {
       try {
         state.items = await listDriveFolder(key);
+        saveCatalogCache(state.items);
         $('#syncStatus').textContent = 'Sincronizado com Drive';
-        $('#syncDetail').textContent = 'Novos arquivos aparecem ao tocar em Atualizar';
+        $('#syncDetail').textContent = `${state.items.length} arquivos sincronizados nas duas bibliotecas`;
+        $('#catalogNotice').classList.add('hidden');
       } catch (err) {
         state.items = await loadStaticCatalog();
         $('#syncStatus').textContent = 'Catálogo local ativo';
-        $('#syncDetail').textContent = 'A chave não sincronizou; usando o catálogo incluído';
+        $('#syncDetail').textContent = `Falha na sincronização; usando ${state.items.length} itens do catálogo local`;
+        $('#catalogNoticeText').textContent = 'A biblioteca completa continua disponível quando a Drive API sincroniza novamente.';
+        $('#catalogNotice').classList.remove('hidden');
         toast(`Drive API: ${err.message}`);
       }
     } else {
       state.items = await loadStaticCatalog();
       $('#syncStatus').textContent = 'Catálogo local ativo';
-      $('#syncDetail').textContent = 'Configure a Drive API para sincronização e CBR/CBZ';
+      $('#syncDetail').textContent = `${state.items.length} itens locais • configure a API para carregar todas as subpastas`;
+      $('#catalogNoticeText').textContent = 'Sem a API Key, o app mostra o catálogo incluído no ZIP. Com a API, ele percorre as duas pastas e todas as subpastas.';
+      $('#catalogNotice').classList.remove('hidden');
     }
   } catch (err) {
     state.items = [];
@@ -171,12 +359,21 @@ async function loadLibrary() {
     $('#syncDetail').textContent = err.message;
     toast(`Falha ao carregar biblioteca: ${err.message}`);
   } finally {
+    for (const meta of state.offlineMeta.values()) if (!state.items.some(x => x.id === meta.id)) state.items.push({ ...meta });
+    state.items = uniqueItems(state.items);
     $('#refreshBtn').disabled = false;
     render();
   }
 }
 
-function seriesLabel(name) {
+function cleanFolderLabel(path) {
+  const leaf = String(path || '').split('/').filter(Boolean).at(-1) || '';
+  if (!leaf || /^Biblioteca\s+\d+$/i.test(leaf)) return '';
+  return leaf.replace(/^\d+\s*[-–—]\s*/, '').replace(/\s*\([^)]*\)\s*$/g, '').trim();
+}
+function seriesLabel(name, folderPath = '') {
+  const folder = cleanFolderLabel(folderPath);
+  if (folder) return folder;
   let s = String(name || '').replace(/\.(pdf|cbr|cbz|rar|zip)$/i, '')
     .replace(/\([^)]*\)/g, ' ')
     .replace(/\bSIX\b/gi, 'Seis')
@@ -190,12 +387,12 @@ function seriesLabel(name) {
     .trim();
   return s || shortCover(name) || 'Sem coleção';
 }
-function seriesKey(name) { return normalizeText(seriesLabel(name)); }
+function seriesKeyFor(item) { return normalizeText(seriesLabel(item?.name, item?.folderPath)); }
 function collectionGroups() {
   const map = new Map();
   for (const item of state.items) {
-    const key = seriesKey(item.name);
-    if (!map.has(key)) map.set(key, { key, label: seriesLabel(item.name), items: [] });
+    const key = seriesKeyFor(item);
+    if (!map.has(key)) map.set(key, { key, label: seriesLabel(item.name, item.folderPath), items: [] });
     map.get(key).items.push(item);
   }
   return [...map.values()].sort((a, b) => b.items.length - a.items.length || naturalSort(a.label, b.label));
@@ -213,31 +410,34 @@ function renderContinueRail() {
 function itemCard(item) {
   const type = extType(item), pct = percentFor(item), thumb = thumbUrl(item);
   const status = pct >= 100 ? 'concluído' : pct ? `${Math.round(pct)}% lido` : 'não iniciado';
-  return `<article class="card" data-id="${escapeHtml(item.id)}">
+  const offline = state.offlineIds.has(item.offlineOriginId || item.id);
+  const offlineBusy = state.offlineBusy.has(item.offlineOriginId || item.id);
+  return `<article class="card ${offline ? 'is-offline' : ''}" data-id="${escapeHtml(item.id)}">
     <div class="cover">
       ${thumb ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" onerror="this.remove()">` : ''}
-      <span class="badge">${type === 'pdf' ? 'PDF' : type === 'comic' ? 'CBR/CBZ' : 'ARQ'}</span>
+      <span class="badge">${type === 'pdf' ? 'PDF' : type === 'comic' ? 'CBR/CBZ' : 'ARQ'}</span>${offline ? '<span class="offline-badge">OFFLINE</span>' : ''}
       <button class="fav ${favorites.has(item.id) ? 'on' : ''}" data-action="fav" title="Favoritar">★</button>
       <div class="cover-word">${escapeHtml(shortCover(item.name))}</div>
     </div>
     <div class="card-body">
       <div class="title">${escapeHtml(item.name)}</div>
-      <div class="meta"><span>${bytes(item.size)}</span><span>${status}</span></div>
+      <div class="meta"><span>${bytes(item.size)}</span><span>${status}</span></div>${item.folderPath ? `<div class="source-path" title="${escapeHtml(item.folderPath)}">${escapeHtml(cleanFolderLabel(item.folderPath) || item.folderPath)}</div>` : ''}
       <div class="progress"><i style="width:${pct}%"></i></div>
-      <div class="card-actions"><button data-action="read">${pct >= 100 ? 'Ler novamente' : pct ? 'Continuar' : 'Ler agora'}</button>${item.localFile ? '' : '<button class="secondary" data-action="drive" title="Abrir no Drive">↗</button>'}</div>
+      <div class="card-actions"><button data-action="read">${pct >= 100 ? 'Ler novamente' : pct ? 'Continuar' : 'Ler agora'}</button><button class="secondary offline-action ${offline ? 'on' : ''}" data-action="offline" title="${offline ? 'Remover do offline' : 'Salvar para ler offline'}">${offlineBusy ? '…' : offline ? '✓' : '☁'}</button><button class="secondary download-action" data-action="download" title="Baixar arquivo">⇩</button>${item.localFile ? '' : '<button class="secondary" data-action="drive" title="Abrir no Drive">↗</button>'}</div>
     </div>
   </article>`;
 }
 function filtered() {
   const arr = state.items.filter(item => {
     const t = extType(item), p = progress[item.id];
-    if (state.collection && seriesKey(item.name) !== state.collection) return false;
+    if (state.collection && seriesKeyFor(item) !== state.collection) return false;
     if (state.filter === 'favorites' && !favorites.has(item.id)) return false;
     if (state.filter === 'reading' && !(p && p.percent > 0 && p.percent < 100)) return false;
     if (state.filter === 'completed' && !(p && p.percent >= 100)) return false;
+    if (state.filter === 'offline' && !state.offlineIds.has(item.offlineOriginId || item.id)) return false;
     if (state.filter === 'pdf' && t !== 'pdf') return false;
     if (state.filter === 'comic' && t !== 'comic') return false;
-    if (state.search && !normalizeText(item.name).includes(state.search)) return false;
+    if (state.search && !normalizeText(`${item.name} ${item.folderPath || ''}`).includes(state.search)) return false;
     return true;
   });
   arr.sort((a, b) => state.sort === 'name' ? naturalSort(a.name, b.name)
@@ -269,6 +469,7 @@ function updateLibraryStats() {
   $('#favoriteCount').textContent = favoriteTotal;
   $('#readingCount').textContent = readingTotal;
   $('#completedCount').textContent = completedTotal;
+  updateOfflineStorageInfo();
 }
 function render() {
   updateLibraryStats();
@@ -283,13 +484,22 @@ function render() {
 }
 
 function setReaderButtons(type) {
-  const comic = type === 'comic';
-  $('#modeBtn').classList.toggle('hidden', !comic);
-  $('#directionBtn').classList.toggle('hidden', !comic);
-  $('#fitBtn').classList.toggle('hidden', !comic);
-  $('#zoomControls').classList.toggle('hidden', !comic);
+  const readable = type === 'comic' || type === 'pdf';
+  $('#modeBtn').classList.toggle('hidden', !readable);
+  $('#directionBtn').classList.toggle('hidden', !readable);
+  $('#fitBtn').classList.toggle('hidden', !readable);
+  $('#zoomControls').classList.toggle('hidden', !readable);
   $('#readerFooter').classList.add('hidden');
   updateCompleteButton();
+}
+
+function updateOfflineCurrentButton() {
+  const btn = $('#offlineCurrentBtn'); if (!btn || !state.current) return;
+  const id = state.current.offlineOriginId || state.current.id;
+  const saved = state.offlineIds.has(id);
+  btn.textContent = saved ? '✓ Offline' : '☁ Salvar offline';
+  btn.classList.toggle('is-offline', saved);
+  btn.title = saved ? 'Remover arquivo da biblioteca offline' : 'Salvar para ler sem internet';
 }
 
 function updateCompleteButton() {
@@ -304,10 +514,11 @@ function updateReaderPrefsUI() {
   $('#modeBtn').textContent = `Modo: ${state.mode === 'page' ? 'Página' : 'Vertical'}`;
   $('#modeBtn').dataset.short = state.mode === 'page' ? '▣' : '↕';
   $('#zoomLabel').textContent = `${Math.round(state.zoom * 100)}%`;
-  $('#zoomControls').classList.toggle('hidden', state.mode !== 'page' || extType(state.current || {}) !== 'comic');
+  $('#zoomControls').classList.toggle('hidden', state.mode !== 'page' || !['comic','pdf'].includes(extType(state.current || {})));
 }
 
 async function openItem(item, forceLarge = false) {
+  item = await ensureOfflineItem(item);
   const type = extType(item);
   const warningLimit = archiveWarningLimitMB();
   if (type === 'comic' && !forceLarge && item.size > warningLimit * 1024 * 1024) {
@@ -326,7 +537,8 @@ async function openItem(item, forceLarge = false) {
   state.zoom = 1;
   $('#reader').classList.remove('hidden'); $('#reader').setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
-  $('#readerTitle').textContent = item.name; $('#readerMeta').textContent = bytes(item.size);
+  $('#readerTitle').textContent = item.name; $('#readerMeta').textContent = `${bytes(item.size)}${item.offline ? ' • OFFLINE' : ''}`;
+  updateOfflineCurrentButton();
   setReaderButtons(type);
   updateReaderPrefsUI();
   if (type === 'pdf') return openPdf(item, token);
@@ -334,20 +546,55 @@ async function openItem(item, forceLarge = false) {
   if (token === state.openToken) showReaderError('Formato não suportado', 'Este arquivo não é PDF, CBR, CBZ, RAR ou ZIP.');
 }
 
-function openPdf(item, token) {
-  if (token !== state.openToken) return;
-  $('#readerLoading').classList.add('hidden');
-  $('#readerFooter').classList.add('hidden');
-  let src;
-  if (item.localFile) {
-    state.pdfObjectUrl = URL.createObjectURL(item.localFile);
-    src = `${state.pdfObjectUrl}#toolbar=1&navpanes=0`;
-  } else {
-    src = drivePreviewUrl(item);
+async function loadPdfJs() {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = import('https://esm.sh/pdfjs-dist@6.3.289/build/pdf.mjs').then(pdfjs => {
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.mjs';
+      return pdfjs;
+    });
   }
-  $('#readerBody').innerHTML = `<iframe class="pdf-frame" src="${src}" title="${escapeHtml(item.name)}" allow="autoplay"></iframe>`;
-  progress[item.id] = { ...(progress[item.id] || {}), percent: Math.max(5, progress[item.id]?.percent || 0), page: 0, mode: 'pdf', updated: Date.now() };
-  saveProgress(); updateLibraryStats(); updateCompleteButton();
+  return pdfjsModulePromise;
+}
+
+async function openPdf(item, token) {
+  if (token !== state.openToken) return;
+  $('#readerLoading').classList.remove('hidden');
+  $('#loadingText').textContent = item.localFile ? 'Preparando PDF offline…' : 'Abrindo PDF no leitor…';
+  $('#readerBody').innerHTML = '';
+  $('#readerFooter').classList.add('hidden');
+  try {
+    const pdfjs = await loadPdfJs();
+    if (token !== state.openToken) return;
+    const options = { disableAutoFetch: false, disableStream: false, disableRange: false };
+    if (item.localFile) {
+      options.data = await item.localFile.arrayBuffer();
+    } else {
+      const key = getApiKey();
+      if (key) {
+        const api = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(item.id)}`);
+        api.searchParams.set('alt', 'media'); api.searchParams.set('key', key);
+        options.url = api.href;
+        if (item.resourceKey) options.httpHeaders = { 'X-Goog-Drive-Resource-Keys': `${item.id}/${item.resourceKey}` };
+      } else {
+        // Tenta o endpoint público. Se o Drive bloquear CORS, mostramos um fallback claro.
+        options.url = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(item.id)}&export=download&confirm=t`;
+      }
+    }
+    const task = pdfjs.getDocument(options);
+    state.pdfDoc = await task.promise;
+    if (token !== state.openToken) { await state.pdfDoc.destroy().catch(() => {}); state.pdfDoc = null; return; }
+    state.pages = Array.from({ length: state.pdfDoc.numPages }, (_, i) => ({ index: i, name: `Página ${i + 1}` }));
+    state.page = Math.max(0, Math.min(state.page, state.pages.length - 1));
+    $('#pageRange').max = state.pages.length;
+    $('#readerLoading').classList.add('hidden');
+    updateReaderPrefsUI();
+    await renderReaderPages();
+  } catch (err) {
+    if (token !== state.openToken || err?.name === 'AbortError') return;
+    $('#readerLoading').classList.add('hidden');
+    const noKeyHint = !item.localFile && !getApiKey() ? ' Configure a Google Drive API Key para usar o leitor PDF próprio com arquivos do Drive.' : '';
+    showReaderError('Não foi possível abrir este PDF', `${err.message || err}${noKeyHint}`, !item.localFile);
+  }
 }
 
 async function fetchArrayBufferWithProgress(url, headers = {}, signal, token) {
@@ -385,7 +632,7 @@ async function fetchArrayBufferWithProgress(url, headers = {}, signal, token) {
   return all.buffer;
 }
 
-async function downloadDriveFile(item, token) {
+async function downloadDriveFile(item, token, purpose = 'reader') {
   const key = getApiKey();
   const attempts = [];
   if (key) {
@@ -396,8 +643,14 @@ async function downloadDriveFile(item, token) {
   }
   attempts.push({ url: `https://drive.usercontent.google.com/download?id=${encodeURIComponent(item.id)}&export=download&confirm=t`, headers: {}, label: 'link público' });
   const controller = new AbortController();
-  state.downloadController?.abort();
-  state.downloadController = controller;
+  const offlineId = item.offlineOriginId || item.id;
+  if (purpose === 'reader') {
+    state.readerDownloadController?.abort();
+    state.readerDownloadController = controller;
+  } else {
+    state.offlineControllers.get(offlineId)?.abort();
+    state.offlineControllers.set(offlineId, controller);
+  }
   let lastError = null;
   try {
     for (const a of attempts) {
@@ -408,7 +661,8 @@ async function downloadDriveFile(item, token) {
       }
     }
   } finally {
-    if (state.downloadController === controller) state.downloadController = null;
+    if (purpose === 'reader' && state.readerDownloadController === controller) state.readerDownloadController = null;
+    if (purpose !== 'reader' && state.offlineControllers.get(offlineId) === controller) state.offlineControllers.delete(offlineId);
   }
   if (!key) throw new Error('O navegador não conseguiu baixar este CBR/CBZ pelo link público por causa das restrições de CORS do Google Drive. Configure uma Google Drive API Key restrita ao seu GitHub Pages ou abra um arquivo local.');
   throw lastError || new Error('Falha ao baixar do Google Drive.');
@@ -486,6 +740,59 @@ function showReaderError(title, message, offerLocal = false) {
   $('#errorSettingsBtn')?.addEventListener('click', openSettings);
 }
 
+async function renderPdfInto(container, index, token, vertical = false) {
+  if (!state.pdfDoc || token !== state.renderToken || !container?.isConnected) return;
+  const page = await state.pdfDoc.getPage(index + 1);
+  if (token !== state.renderToken || !container?.isConnected) return;
+  const base = page.getViewport({ scale: 1 });
+  const root = $('#readerBody');
+  const availableWidth = Math.max(280, (vertical ? Math.min(root.clientWidth, 1100) : root.clientWidth) - (vertical ? 8 : 28));
+  const availableHeight = Math.max(280, root.clientHeight - 24);
+  let scale = availableWidth / base.width;
+  if (!vertical && state.fit === 'contain') scale = Math.min(scale, availableHeight / base.height);
+  scale = Math.max(.25, Math.min(4, scale * (vertical ? 1 : state.zoom)));
+  const viewport = page.getViewport({ scale });
+  const dpr = Math.min(performanceProfile().pdfDpr, window.devicePixelRatio || 1);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'pdf-page-canvas';
+  canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+  canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+  canvas.style.width = `${Math.floor(viewport.width)}px`;
+  canvas.style.height = `${Math.floor(viewport.height)}px`;
+  canvas.setAttribute('aria-label', `Página ${index + 1}`);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const renderContext = { canvasContext: ctx, viewport, transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0] };
+  if (!vertical) {
+    state.pdfRenderTask?.cancel?.();
+    state.pdfRenderTask = page.render(renderContext);
+    try { await state.pdfRenderTask.promise; } catch (e) { if (e?.name !== 'RenderingCancelledException') throw e; }
+    finally { if (state.pdfRenderTask) state.pdfRenderTask = null; }
+  } else {
+    const task = page.render(renderContext); await task.promise;
+  }
+  if (token !== state.renderToken || !container?.isConnected) return;
+  container.innerHTML = ''; container.appendChild(canvas);
+  if (vertical) container.style.aspectRatio = `${viewport.width}/${viewport.height}`;
+}
+
+async function renderPdfPageMode(token) {
+  $('#readerFooter').classList.remove('hidden');
+  $('#readerLoading').classList.remove('hidden');
+  $('#loadingText').textContent = `Renderizando PDF • página ${state.page + 1}…`;
+  $('#readerBody').classList.add('page-mode');
+  $('#readerBody').innerHTML = `<div class="page-stage ${state.fit === 'width' ? 'fit-width' : ''}"><div id="pdfPageMount" class="pdf-page-mount"><span class="page-placeholder">Página ${state.page + 1}</span></div></div>`;
+  try { await renderPdfInto($('#pdfPageMount'), state.page, token, false); }
+  finally { if (token === state.renderToken) $('#readerLoading').classList.add('hidden'); }
+}
+
+async function renderPdfVerticalMode(token) {
+  $('#readerFooter').classList.add('hidden');
+  $('#readerBody').classList.remove('page-mode');
+  $('#readerBody').innerHTML = `<div class="vertical-pages pdf-vertical">${state.pages.map((_, i) => `<div class="page-slot pdf-slot" data-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
+  setupVerticalObserver();
+  requestAnimationFrame(() => $(`.page-slot[data-i="${state.page}"]`)?.scrollIntoView({ block: 'start' }));
+}
+
 async function getPageUrl(index, expectedToken = state.renderToken) {
   const archive = state.archive;
   const page = state.pages[index];
@@ -510,14 +817,14 @@ async function getPageUrl(index, expectedToken = state.renderToken) {
 }
 
 function trimPageCache(center) {
-  const limit = Math.max(4, Number(CONFIG.pageCacheLimit || 12));
+  const limit = performanceProfile().cacheLimit;
   if (state.pageUrls.size <= limit) return;
   const candidates = [...state.pageUrls.keys()].filter(i => Math.abs(i - center) > 2).sort((a, b) => (state.pageUse.get(a) || 0) - (state.pageUse.get(b) || 0));
   while (state.pageUrls.size > limit && candidates.length) {
     const i = candidates.shift(); const url = state.pageUrls.get(i);
     URL.revokeObjectURL(url); state.pageUrls.delete(i); state.pageUse.delete(i);
     const slot = $(`.page-slot[data-i="${i}"]`);
-    if (slot) slot.innerHTML = `<span class="page-placeholder">Página ${i + 1}</span>`;
+    if (slot) { slot.dataset.loaded = ''; slot.innerHTML = `<span class="page-placeholder">Página ${i + 1}</span>`; }
   }
 }
 
@@ -525,7 +832,15 @@ async function renderReaderPages() {
   if (!state.pages.length) return;
   const token = ++state.renderToken;
   stopVerticalObserver();
-  if (state.mode === 'vertical') {
+  const isPdf = extType(state.current || {}) === 'pdf' && Boolean(state.pdfDoc);
+  if (isPdf) {
+    try {
+      if (state.mode === 'vertical') await renderPdfVerticalMode(token);
+      else await renderPdfPageMode(token);
+    } catch (err) {
+      if (token === state.renderToken && err?.name !== 'RenderingCancelledException') showReaderError('Falha ao renderizar PDF', err.message || String(err));
+    }
+  } else if (state.mode === 'vertical') {
     $('#readerFooter').classList.add('hidden');
     $('#readerBody').classList.remove('page-mode');
     $('#readerBody').innerHTML = `<div class="vertical-pages">${state.pages.map((_, i) => `<div class="page-slot" data-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
@@ -540,7 +855,7 @@ async function renderReaderPages() {
       $('#readerBody').classList.add('page-mode');
       const zoomStyle = state.zoom === 1 ? '' : `style="width:${Math.round(state.zoom * 100)}%;max-width:none;height:auto"`;
       $('#readerBody').innerHTML = `<div class="page-stage ${state.fit === 'width' ? 'fit-width' : ''}"><img src="${url}" alt="Página ${state.page + 1}" ${zoomStyle}></div>`;
-      [state.page - 1, state.page + 1].filter(i => i >= 0 && i < state.pages.length).forEach(i => setTimeout(() => getPageUrl(i, token).catch(() => {}), 30));
+      if (performanceProfile().prefetch) [state.page - 1, state.page + 1].filter(i => i >= 0 && i < state.pages.length).forEach(i => setTimeout(() => getPageUrl(i, token).catch(() => {}), 50));
     } catch (err) {
       if (token === state.renderToken) showReaderError('Falha ao carregar página', err.message);
     } finally {
@@ -554,25 +869,55 @@ function setupVerticalObserver() {
   const root = $('#readerBody');
   state.verticalObserver = new IntersectionObserver(entries => {
     for (const entry of entries) if (entry.isIntersecting) loadVerticalSlot(entry.target).catch(() => {});
-  }, { root, rootMargin: '1200px 0px', threshold: 0.01 });
+  }, { root, rootMargin: `${performanceProfile().observerMargin}px 0px`, threshold: 0.01 });
   $$('.page-slot').forEach(slot => state.verticalObserver.observe(slot));
   let ticking = false;
   state.verticalScrollHandler = () => {
     if (ticking) return; ticking = true;
     requestAnimationFrame(() => {
-      ticking = false; updateVerticalPosition();
+      ticking = false; updateVerticalPosition(); cleanupVerticalSlots();
     });
   };
   root.addEventListener('scroll', state.verticalScrollHandler, { passive: true });
 }
 
 async function loadVerticalSlot(slot) {
-  if (!slot?.isConnected || slot.querySelector('img')) return;
-  const i = Number(slot.dataset.i); const url = await getPageUrl(i);
-  if (!slot.isConnected) return;
-  const img = new Image(); img.alt = `Página ${i + 1}`; img.loading = 'lazy'; img.src = url;
-  img.onload = () => { if (img.naturalWidth && img.naturalHeight) slot.style.aspectRatio = `${img.naturalWidth}/${img.naturalHeight}`; };
-  slot.innerHTML = ''; slot.appendChild(img);
+  if (!slot?.isConnected || slot.dataset.loaded === '1') return;
+  const i = Number(slot.dataset.i);
+  slot.dataset.loaded = '1';
+  try {
+    if (extType(state.current || {}) === 'pdf' && state.pdfDoc) {
+      await renderPdfInto(slot, i, state.renderToken, true);
+      return;
+    }
+    const url = await getPageUrl(i);
+    if (!slot.isConnected) return;
+    const img = new Image(); img.alt = `Página ${i + 1}`; img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.src = url;
+    img.onload = () => { if (img.naturalWidth && img.naturalHeight) slot.style.aspectRatio = `${img.naturalWidth}/${img.naturalHeight}`; };
+    slot.innerHTML = ''; slot.appendChild(img);
+  } catch (err) {
+    slot.dataset.loaded = '';
+    if (slot.isConnected) slot.innerHTML = `<span class="page-placeholder">Falha na página ${i + 1}</span>`;
+  }
+}
+
+
+function cleanupVerticalSlots(force = false) {
+  if (state.mode !== 'vertical' || !state.pages.length) return;
+  const profile = performanceProfile();
+  if (!force && !profile.mobile && !profile.eco) return;
+  const keep = profile.verticalWindow;
+  for (const slot of $$('.page-slot')) {
+    if (slot.dataset.loaded !== '1') continue;
+    const i = Number(slot.dataset.i);
+    if (Math.abs(i - state.page) <= keep) continue;
+    slot.dataset.loaded = '';
+    slot.innerHTML = `<span class="page-placeholder">Página ${i + 1}</span>`;
+    if (extType(state.current || {}) !== 'pdf' && state.pageUrls.has(i)) {
+      URL.revokeObjectURL(state.pageUrls.get(i));
+      state.pageUrls.delete(i); state.pageUse.delete(i);
+    }
+  }
 }
 
 function updateVerticalPosition() {
@@ -592,7 +937,8 @@ function stopVerticalObserver() {
 }
 function getNextIssue() {
   if (!state.current || state.current.localFile) return null;
-  const group = state.items.filter(i => seriesKey(i.name) === seriesKey(state.current.name)).sort((a, b) => naturalSort(a.name, b.name));
+  const currentKey = seriesKeyFor(state.current);
+  const group = state.items.filter(i => seriesKeyFor(i) === currentKey).sort((a, b) => naturalSort(a.name, b.name));
   const i = group.findIndex(x => x.id === state.current.id);
   return i >= 0 && i < group.length - 1 ? group[i + 1] : null;
 }
@@ -617,14 +963,16 @@ async function setPage(n) {
 }
 
 async function cleanupReaderData() {
-  state.downloadController?.abort();
-  state.downloadController = null;
+  state.readerDownloadController?.abort();
+  state.readerDownloadController = null;
   stopVerticalObserver();
   state.renderToken++;
   state.touchStart = null;
   for (const url of state.pageUrls.values()) URL.revokeObjectURL(url);
   state.pageUrls.clear(); state.pageUse.clear();
   if (state.pdfObjectUrl) { URL.revokeObjectURL(state.pdfObjectUrl); state.pdfObjectUrl = ''; }
+  state.pdfRenderTask?.cancel?.(); state.pdfRenderTask = null;
+  if (state.pdfDoc) { await state.pdfDoc.destroy().catch(() => {}); state.pdfDoc = null; }
   state.archive = null; state.pages = []; $('#readerBody')?.classList.remove('page-mode');
 }
 async function closeReader() {
@@ -638,7 +986,7 @@ async function closeReader() {
 function markComplete() {
   if (!state.current) return;
   const page = state.pages.length ? state.pages.length - 1 : 0;
-  progress[state.current.id] = { percent: 100, page, mode: extType(state.current) === 'pdf' ? 'pdf' : state.mode, direction: state.direction, updated: Date.now() };
+  progress[state.current.id] = { percent: 100, page, mode: state.mode, direction: state.direction, updated: Date.now() };
   saveProgress(); updateLibraryStats(); updateCompleteButton(); toast('Marcado como lido.');
 }
 
@@ -646,6 +994,8 @@ function openSettings() {
   $('#apiKeyInput').value = getApiKey();
   $('#defaultModeSelect').value = prefs.defaultMode || 'page';
   $('#directionSelect').value = prefs.direction || 'ltr';
+  if ($('#performanceSelect')) $('#performanceSelect').value = prefs.performance || 'auto';
+  if ($('#performanceHint')) $('#performanceHint').textContent = `Ativo: ${performanceLabel()} • ${navigator.deviceMemory ? navigator.deviceMemory + ' GB RAM' : 'RAM não informada'}${navigator.hardwareConcurrency ? ' • ' + navigator.hardwareConcurrency + ' núcleos' : ''}`;
   $('#configStatus').textContent = getApiKey() ? 'Chave configurada neste navegador.' : 'Nenhuma chave configurada.';
   $('#settingsModal').classList.remove('hidden');
 }
@@ -672,6 +1022,8 @@ document.addEventListener('click', e => {
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (action === 'fav') { favorites.has(item.id) ? favorites.delete(item.id) : favorites.add(item.id); saveFav(); render(); return; }
     if (action === 'drive') { safeOpen(driveViewUrl(item)); return; }
+    if (action === 'download') { downloadItem(item); return; }
+    if (action === 'offline') { toggleOfflineItem(item); return; }
     if (action === 'read') { openItem(item); return; }
   }
   const nav = e.target.closest('.nav');
@@ -683,7 +1035,16 @@ $('#sortSelect').addEventListener('change', e => { state.sort = e.target.value; 
 $('#showReadingBtn').addEventListener('click', () => { state.collection = ''; state.filter = 'reading'; $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.filter === 'reading')); render(); });
 $('#backCollectionsBtn').addEventListener('click', () => { state.collection = ''; state.filter = 'collections'; $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.filter === 'collections')); render(); });
 $('#refreshBtn').addEventListener('click', loadLibrary);
-$('#driveBtn').addEventListener('click', () => safeOpen(CONFIG.folderUrl));
+function openDriveModal() {
+  const urls = Array.isArray(CONFIG.folderUrls) && CONFIG.folderUrls.length ? CONFIG.folderUrls : [CONFIG.folderUrl].filter(Boolean);
+  $('#driveRoots').innerHTML = urls.map((url, i) => `<button class="drive-root" data-drive-url="${escapeHtml(url)}"><span>Biblioteca ${i + 1}</span><small>${escapeHtml(url)}</small><b>↗</b></button>`).join('');
+  $('#driveModal').classList.remove('hidden');
+}
+function closeDriveModal() { $('#driveModal').classList.add('hidden'); }
+$('#driveBtn').addEventListener('click', openDriveModal);
+$('#closeDriveModal').addEventListener('click', closeDriveModal);
+$('#driveModal').addEventListener('click', e => { if (e.target === $('#driveModal')) closeDriveModal(); });
+$('#driveRoots').addEventListener('click', e => { const b=e.target.closest('[data-drive-url]'); if (b) safeOpen(b.dataset.driveUrl); });
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#noticeSettingsBtn').addEventListener('click', openSettings);
 $('#closeSettings').addEventListener('click', closeSettings);
@@ -692,18 +1053,22 @@ $('#saveKeyBtn').addEventListener('click', async () => {
   const key = $('#apiKeyInput').value.trim();
   prefs.defaultMode = $('#defaultModeSelect').value === 'vertical' ? 'vertical' : 'page';
   prefs.direction = $('#directionSelect').value === 'rtl' ? 'rtl' : 'ltr';
+  prefs.performance = ['auto','eco','quality'].includes($('#performanceSelect')?.value) ? $('#performanceSelect').value : 'auto';
   savePrefs();
   if (key) storageSet(LS.apiKey, key); else storageRemove(LS.apiKey);
   $('#configStatus').textContent = key ? 'Chave salva. Sincronizando…' : 'Chave removida.';
-  closeSettings(); await loadLibrary();
+  closeSettings(); await (async () => { await refreshOfflineIndex(); await updateOfflineStorageInfo(); await loadLibrary(); })();
 });
 $('#clearKeyBtn').addEventListener('click', async () => {
-  storageRemove(LS.apiKey); $('#apiKeyInput').value = ''; $('#configStatus').textContent = 'Chave removida.'; closeSettings(); await loadLibrary();
+  storageRemove(LS.apiKey); $('#apiKeyInput').value = ''; $('#configStatus').textContent = 'Chave removida.'; closeSettings(); await (async () => { await refreshOfflineIndex(); await updateOfflineStorageInfo(); await loadLibrary(); })();
 });
 
 $('#localBtn').addEventListener('click', () => $('#localFileInput').click());
 $('#localFileInput').addEventListener('change', async e => { const file = e.target.files?.[0]; e.target.value = ''; await openLocalSelected(file); });
 $('#closeReader').addEventListener('click', closeReader);
+$('#downloadCurrentBtn').addEventListener('click', () => downloadItem(state.current));
+$('#offlineCurrentBtn').addEventListener('click', async () => { if (state.current) { await toggleOfflineItem(state.current); updateOfflineCurrentButton(); } });
+$('#clearOfflineBtn').addEventListener('click', clearOfflineLibrary);
 $('#completeBtn').addEventListener('click', markComplete);
 $('#prevPage').addEventListener('click', () => setPage(state.page - 1));
 $('#nextPage').addEventListener('click', () => setPage(state.page + 1));
@@ -745,7 +1110,9 @@ $('#continueLargeBtn').addEventListener('click', async () => {
 document.addEventListener('keydown', e => {
   const settingsOpen = !$('#settingsModal').classList.contains('hidden');
   const largeOpen = !$('#largeFileModal').classList.contains('hidden');
+  const driveOpen = !$('#driveModal').classList.contains('hidden');
   if (settingsOpen) { if (e.key === 'Escape') closeSettings(); return; }
+  if (driveOpen) { if (e.key === 'Escape') closeDriveModal(); return; }
   if (largeOpen) {
     if (e.key === 'Escape') { state.largePending = null; $('#largeFileModal').classList.add('hidden'); }
     return;
@@ -769,7 +1136,7 @@ $('#readerBody').addEventListener('click', e => {
   const next = state.direction === 'rtl' ? leftZone : !leftZone;
   setPage(state.page + (next ? 1 : -1));
 });
-$('#readerBody').addEventListener('dblclick', e => { if (state.mode === 'page' && e.target.closest('img')) setZoom(state.zoom === 1 ? 1.6 : 1); });
+$('#readerBody').addEventListener('dblclick', e => { if (state.mode === 'page' && e.target.closest('img,canvas')) setZoom(state.zoom === 1 ? 1.6 : 1); });
 $('#readerBody').addEventListener('touchstart', e => {
   if (state.mode !== 'page' || !state.pages.length || e.touches.length !== 1 || state.zoom > 1.01) return;
   const t = e.touches[0]; state.touchStart = { x: t.clientX, y: t.clientY, time: Date.now() };
@@ -786,7 +1153,7 @@ $('#readerBody').addEventListener('touchend', e => {
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: '3.1.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '5.2.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -818,6 +1185,8 @@ $('#installBtn').addEventListener('click', async () => {
   if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $('#installBtn').classList.add('hidden');
 });
 
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cleanupVerticalSlots(true); });
+
 if (storageGet(LS.theme) === 'light') document.documentElement.classList.add('light');
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
-loadLibrary();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').then(reg => { reg.update().catch(() => {}); }).catch(() => {});
+(async () => { await refreshOfflineIndex(); await updateOfflineStorageInfo(); await loadLibrary(); })();

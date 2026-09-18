@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
   <meta name="description" content="Leitor de mangás e HQs em PDF, CBR e CBZ conectado a uma biblioteca do Google Drive." />
-  <title>Manga HQ Reader v4.0</title>
+  <title>Manga HQ Reader v5.2</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
@@ -16,13 +16,13 @@
   <div id="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark">M</div>
-        <div><strong>Manga HQ Reader</strong><small>Google Drive Library</small></div>
+        <img class="brand-logo" src="./logo-manga-hq-reader.png" alt="Manga HQ Reader" />
+        <div class="brand-copy"><strong>Manga HQ Reader</strong><small>Google Drive Library</small></div>
       </div>
       <div class="top-actions">
         <button id="localBtn" class="ghost" title="Abrir arquivo do aparelho" aria-label="Abrir arquivo do aparelho">Abrir arquivo</button>
         <button id="installBtn" class="ghost hidden">Instalar</button>
-        <button id="driveBtn" class="ghost">Abrir Drive</button>
+        <button id="driveBtn" class="ghost">Pastas Drive</button>
         <button id="settingsBtn" class="icon-btn" title="Configurações">⚙</button>
         <button id="themeBtn" class="icon-btn" title="Alternar tema">◐</button>
       </div>
@@ -36,6 +36,7 @@
           <button class="nav" data-filter="collections">▤ <span>Coleções</span></button>
           <button class="nav" data-filter="favorites">★ <span>Favoritos</span></button>
           <button class="nav" data-filter="completed">✓ <span>Lidos</span></button>
+          <button class="nav" data-filter="offline">⇩ <span>Offline</span></button>
           <button class="nav" data-filter="pdf">PDF <span>PDFs</span></button>
           <button class="nav" data-filter="comic">CBR <span>HQs/Mangás</span></button>
         </nav>
@@ -48,10 +49,10 @@
       <section class="content">
         <div class="hero">
           <div class="hero-copy">
-            <span class="eyebrow">SUA BIBLIOTECA</span>
+            <span class="eyebrow">DUAS BIBLIOTECAS • UM LEITOR</span>
             <h1>Mangás e HQs em um leitor só.</h1>
-            <p>Feito para GitHub Pages: PDF, CBR e CBZ, favoritos, progresso, leitura vertical e por página.</p>
-            <div class="hero-tags"><span>PDF</span><span>CBR & CBZ</span><span>Progresso automático</span><span>Google Drive</span></div>
+            <p>Feito para GitHub Pages: duas bibliotecas do Google Drive, PDF, CBR e CBZ, favoritos, progresso, downloads e leitura offline.</p>
+            <div class="hero-tags"><span>PDF</span><span>CBR & CBZ</span><span>Progresso automático</span><span>Leitura offline</span></div>
           </div>
           <div class="stats">
             <div><b id="itemCount">0</b><span>arquivos</span></div>
@@ -61,8 +62,10 @@
           </div>
         </div>
 
+        <div id="catalogNotice" class="catalog-notice hidden"><strong>Catálogo local</strong><span id="catalogNoticeText"></span></div>
+
         <div id="apiNotice" class="notice hidden">
-          <div><strong>Leitura CBR/CBZ direto do Drive</strong><span>Configure uma chave da Google Drive API para sincronizar e baixar os quadrinhos dentro do leitor.</span></div>
+          <div><strong>Leitura CBR/CBZ direto do Drive</strong><span>Configure uma chave da Google Drive API para sincronizar e abrir PDF/CBR/CBZ no leitor próprio, com progresso real por página.</span></div>
           <button id="noticeSettingsBtn">Configurar</button>
         </div>
 
@@ -97,6 +100,8 @@
       <button id="closeReader" class="icon-btn" title="Voltar">←</button>
       <div class="reader-title-wrap"><strong id="readerTitle">Leitor</strong><small id="readerMeta"></small></div>
       <div class="reader-controls">
+        <button id="offlineCurrentBtn" class="ghost offline-reader" title="Salvar para ler sem internet">☁ Salvar offline</button>
+        <button id="downloadCurrentBtn" class="ghost download-reader" title="Baixar arquivo">⇩ Baixar</button>
         <button id="completeBtn" class="ghost" title="Marcar como lido">✓ Marcar lido</button>
         <button id="modeBtn" class="ghost">Modo: Página</button>
         <button id="directionBtn" class="ghost" title="Direção da leitura">Leitura: →</button>
@@ -133,11 +138,20 @@
         <div class="settings-grid">
           <label class="field"><span>Modo padrão</span><select id="defaultModeSelect"><option value="page">Página</option><option value="vertical">Vertical</option></select></label>
           <label class="field"><span>Direção padrão</span><select id="directionSelect"><option value="ltr">Esquerda → direita</option><option value="rtl">Direita → esquerda (mangá)</option></select></label>
+          <label class="field"><span>Desempenho</span><select id="performanceSelect"><option value="auto">Automático</option><option value="eco">Econômico / celular fraco</option><option value="quality">Qualidade máxima</option></select><small id="performanceHint" class="field-hint"></small></label>
         </div>
         <div class="config-status" id="configStatus"></div>
+        <div class="offline-settings"><div><strong>Biblioteca offline</strong><small id="offlineStorageInfo">Calculando armazenamento…</small></div><button id="clearOfflineBtn" class="secondary-btn">Limpar offline</button></div>
         <div class="data-actions"><button id="exportDataBtn" class="secondary-btn">Exportar progresso</button><button id="importDataBtn" class="secondary-btn">Importar progresso</button><button id="resetProgressBtn" class="danger-btn">Limpar progresso</button></div>
         <div class="modal-actions"><button id="clearKeyBtn" class="secondary-btn">Remover chave</button><button id="saveKeyBtn">Salvar e sincronizar</button></div>
       </div>
+    </div>
+  </div>
+
+  <div id="driveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
+    <div class="modal-card compact">
+      <div class="modal-head"><div><strong id="driveTitle">Pastas do Google Drive</strong><small>As duas bibliotecas ficam sincronizadas no mesmo app</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
+      <div class="modal-body"><div id="driveRoots" class="drive-roots"></div></div>
     </div>
   </div>
 
