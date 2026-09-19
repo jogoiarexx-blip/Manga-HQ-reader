@@ -1,9 +1,9 @@
 const CACHE_PREFIX = 'manga-hq-reader-ghpages-';
-const CACHE = `${CACHE_PREFIX}v5.4.0`;
+const CACHE = `${CACHE_PREFIX}v1.1.1`;
 const BASE = new URL('./', self.location.href);
 const CORE = [
   './', './index.html', './css/app.css', './js/app.js', './config.js',
-  './data/catalog.json', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'
+  './data/catalog.json', './manifest.webmanifest', './icon-64.png', './apple-touch-icon.png', './icon-192.png', './icon-512.png'
 ].map(p => new URL(p, BASE).href);
 
 self.addEventListener('install', event => {

@@ -248,7 +248,7 @@ a{color:inherit}
   .top-actions .ghost{display:none}
   .top-actions #localBtn{display:block;padding:9px}
   .reader-controls .ghost{display:none}
-  .reader-controls #completeBtn,.reader-controls #modeBtn,.reader-controls #directionBtn{display:grid;place-items:center;padding:8px}
+  .reader-controls #completeBtn,.reader-controls #modeBtn,.reader-controls #directionBtn,.reader-controls #autoScrollBtn{display:grid;place-items:center;padding:8px}
   .reader-topbar{padding:0 8px}
   .page-stage{padding:6px}
   .vertical-pages{padding:0}
@@ -271,10 +271,12 @@ a{color:inherit}
   .brand>div:last-child{min-width:0}
   .top-actions #localBtn{font-size:0;width:40px;height:40px;padding:0}
   .top-actions #localBtn:after{content:"＋";font-size:20px}
-  .reader-controls #completeBtn,.reader-controls #modeBtn,.reader-controls #directionBtn{font-size:0;width:40px;height:40px;padding:0}
+  .reader-controls #completeBtn,.reader-controls #modeBtn,.reader-controls #directionBtn,.reader-controls #autoScrollBtn{font-size:0;width:40px;height:40px;padding:0}
   .reader-controls #completeBtn:after{content:"✓";font-size:18px}
   .reader-controls #modeBtn:after{content:attr(data-short);font-size:18px}
   .reader-controls #directionBtn:after{content:attr(data-arrow);font-size:18px}
+  .reader-controls #autoScrollBtn:after{content:"▶";font-size:16px}
+  .reader-controls #autoScrollBtn:not(.hidden):has(+ *){}
   .drop-overlay>div{padding:30px 24px;width:calc(100% - 32px)}
   .card-body{padding:13px}.title{font-size:13px}.meta{font-size:10px}
 }
@@ -338,7 +340,7 @@ a{color:inherit}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 
 
-/* v5.4.0 — fontes externas */
+/* v1.0.0 — fontes externas e status */
 .external-sources{display:grid;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .source-section-title{font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .external-source-card{display:grid;gap:10px;padding:14px;border-radius:16px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(124,58,237,.08),rgba(255,255,255,.02))}
@@ -346,3 +348,27 @@ a{color:inherit}
 .external-badge{display:inline-flex;align-items:center;min-height:22px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:.08em;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.32);color:#fbbf24}
 .external-source-actions{display:flex;gap:8px;flex-wrap:wrap}.external-source-actions button{flex:1 1 130px}
 @media(max-width:520px){.external-source-actions{display:grid;grid-template-columns:1fr}.external-source-actions button{width:100%}}
+
+/* v1.0.0 — conectividade e runtimes */
+.network-status{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);color:var(--muted);font-size:11px;font-weight:800;white-space:nowrap}
+.network-status.offline{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12);color:#fbbf24}
+.network-status.online{border-color:rgba(16,185,129,.28);background:rgba(16,185,129,.10);color:#6ee7b7}
+.runtime-status{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--muted);font-size:12px;line-height:1.45}
+.runtime-status.ok{border-color:rgba(16,185,129,.28);color:#6ee7b7}
+.runtime-status.warn{border-color:rgba(245,158,11,.28);color:#fbbf24}
+@media(max-width:650px){.network-status{font-size:0;width:34px;height:34px;padding:0;justify-content:center}.network-status::after{content:'●';font-size:14px}}
+
+
+/* Modos avançados de leitura */
+.page-stage.spread-stage{gap:10px;align-items:center;flex-wrap:nowrap;padding-inline:12px}
+.page-stage.spread-stage.spread-rtl{flex-direction:row-reverse}
+.page-stage.spread-stage>img,.page-stage.spread-stage>.spread-page{max-width:calc(50% - 5px);min-width:0}
+.page-stage.spread-stage>img{width:auto;height:auto;object-fit:contain}
+.spread-page{display:grid;place-items:center;min-height:0}
+.spread-page .pdf-page-canvas{max-width:100%;height:auto!important}
+.webtoon-pages{width:min(100%,820px);padding:0!important}
+.webtoon-pages .page-slot{margin:0!important;border:0!important;border-radius:0!important;background:#05070c}
+.webtoon-pages .page-slot img{object-fit:contain;background:#05070c}
+.webtoon-pages.pdf-vertical .pdf-page-canvas{display:block;max-width:100%;height:auto!important;margin:0 auto}
+
+@media(max-width:650px) and (orientation:portrait){.page-stage.spread-stage{display:block}.page-stage.spread-stage>img,.page-stage.spread-stage>.spread-page{max-width:100%;margin:auto}.page-stage.spread-stage>img:nth-child(n+2),.page-stage.spread-stage>.spread-page:nth-child(n+2){display:none}}

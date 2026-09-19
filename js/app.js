@@ -2,7 +2,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '5.2.0',
+  appVersion: '1.1.0',
   folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
   folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
@@ -19,8 +19,42 @@ const LS = {
   theme: 'mhqr:theme',
   apiKey: 'mhqr:driveApiKey',
   prefs: 'mhqr:prefs',
-  catalog: 'mhqr:catalogCache'
+  catalog: 'mhqr:catalogCache',
+  syncMeta: 'mhqr:syncMeta'
 };
+
+
+
+const RUNTIME_URLS = [
+  'https://esm.sh/pdfjs-dist@6.3.289/build/pdf.mjs',
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.mjs',
+  'https://esm.sh/jszip@3.10.1',
+  'https://esm.sh/node-unrar-js@2.0.2?bundle',
+  'https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm'
+];
+function formatDateTime(ts) {
+  if (!ts) return '';
+  try { return new Intl.DateTimeFormat('pt-BR', { dateStyle:'short', timeStyle:'short' }).format(new Date(ts)); }
+  catch { return ''; }
+}
+function setNetworkStatus() {
+  const el = $('#networkStatus'); if (!el) return;
+  const online = navigator.onLine !== false;
+  el.textContent = online ? '● Online' : '● Offline';
+  el.classList.toggle('online', online); el.classList.toggle('offline', !online);
+  el.title = online ? 'Conectado à internet' : 'Sem internet — usando dados e HQs salvos';
+}
+async function warmReaderRuntimes() {
+  const el = $('#runtimeStatus');
+  if (!navigator.onLine) { if (el) { el.textContent = 'Offline: usando motores já armazenados no cache, quando disponíveis.'; el.className = 'runtime-status warn'; } return; }
+  if (el) { el.textContent = 'Preparando motores de PDF/CBR/CBZ para uso offline…'; el.className = 'runtime-status'; }
+  const results = await Promise.allSettled(RUNTIME_URLS.map(url => fetch(url, { mode:'cors', cache:'reload' }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })));
+  const ok = results.filter(r => r.status === 'fulfilled').length;
+  if (el) {
+    if (ok === RUNTIME_URLS.length) { el.textContent = 'Motores de PDF/CBR/CBZ preparados para uso offline após esta primeira conexão.'; el.className = 'runtime-status ok'; }
+    else { el.textContent = `Motores offline parcialmente preparados (${ok}/${RUNTIME_URLS.length}). O app tentará novamente quando houver internet.`; el.className = 'runtime-status warn'; }
+  }
+}
 
 const storageGet = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const storageSet = (key, value) => { try { localStorage.setItem(key, value); return true; } catch { return false; } };
@@ -35,12 +69,12 @@ const state = {
   pages: [], page: 0, mode: 'page', fit: 'contain', direction: 'ltr', zoom: 1, collection: '', archive: null,
   pageUrls: new Map(), pageUse: new Map(), verticalObserver: null,
   verticalScrollHandler: null, renderToken: 0, openToken: 0, pdfObjectUrl: '', pdfDoc: null, pdfRenderTask: null, largePending: null,
-  readerDownloadController: null, offlineControllers: new Map(), touchStart: null, offlineIds: new Set(), offlineMeta: new Map(), offlineBusy: new Set()
+  readerDownloadController: null, offlineControllers: new Map(), touchStart: null, offlineIds: new Set(), offlineMeta: new Map(), offlineBusy: new Set(), autoScrollId: 0, autoScrollLast: 0
 };
 
 const favorites = new Set(readJson(LS.fav, []));
 const progress = readJson(LS.progress, {});
-const prefs = { defaultMode: 'page', direction: 'ltr', performance: 'auto', ...readJson(LS.prefs, {}) };
+const prefs = { defaultMode: 'page', direction: 'ltr', performance: 'auto', autoScrollSpeed: 46, ...readJson(LS.prefs, {}) };
 function savePrefs() { storageSet(LS.prefs, JSON.stringify(prefs)); }
 
 function performanceProfile() {
@@ -173,6 +207,11 @@ async function saveItemOffline(item) {
 }
 async function toggleOfflineItem(item) {
   const id = item?.offlineOriginId || item?.id; if (!id) return;
+  if (state.offlineBusy.has(id)) {
+    state.offlineControllers.get(id)?.abort();
+    toast('Salvamento offline cancelado.');
+    return;
+  }
   if (state.offlineIds.has(id)) {
     if (!confirm(`Remover “${item.name}” da biblioteca offline?`)) return;
     await deleteOfflineRecord(id); toast('Arquivo removido do offline.');
@@ -234,7 +273,13 @@ function thumbUrl(item) {
 }
 function driveViewUrl(item) { const u = new URL(`https://drive.google.com/file/d/${encodeURIComponent(item.id)}/view`); if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey); return u.href; }
 function drivePreviewUrl(item) { return `https://drive.google.com/file/d/${encodeURIComponent(item.id)}/preview`; }
-function safeOpen(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
+function safeOpen(url) {
+  try {
+    const u = new URL(url, location.href);
+    if (!['https:','http:'].includes(u.protocol)) throw new Error('Protocolo não permitido');
+    window.open(u.href, '_blank', 'noopener,noreferrer');
+  } catch { toast('Link externo inválido ou bloqueado.'); }
+}
 function sanitizeFilename(name) {
   return String(name || 'arquivo').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'arquivo';
 }
@@ -335,21 +380,24 @@ async function loadLibrary() {
       try {
         state.items = await listDriveFolder(key);
         saveCatalogCache(state.items);
+        storageSet(LS.syncMeta, JSON.stringify({ at: Date.now(), count: state.items.length }));
         $('#syncStatus').textContent = 'Sincronizado com Drive';
-        $('#syncDetail').textContent = `${state.items.length} arquivos sincronizados nas duas bibliotecas`;
+        $('#syncDetail').textContent = `${state.items.length} arquivos sincronizados nas duas bibliotecas • agora`;
         $('#catalogNotice').classList.add('hidden');
       } catch (err) {
         state.items = await loadStaticCatalog();
-        $('#syncStatus').textContent = 'Catálogo local ativo';
-        $('#syncDetail').textContent = `Falha na sincronização; usando ${state.items.length} itens do catálogo local`;
+        const sm = readJson(LS.syncMeta, {}); const last = formatDateTime(sm.at);
+        $('#syncStatus').textContent = 'Catálogo salvo ativo';
+        $('#syncDetail').textContent = `Falha na sincronização; usando ${state.items.length} itens${last ? ` • última sincronização: ${last}` : ''}`;
         $('#catalogNoticeText').textContent = 'A biblioteca completa continua disponível quando a Drive API sincroniza novamente.';
         $('#catalogNotice').classList.remove('hidden');
         toast(`Drive API: ${err.message}`);
       }
     } else {
       state.items = await loadStaticCatalog();
-      $('#syncStatus').textContent = 'Catálogo local ativo';
-      $('#syncDetail').textContent = `${state.items.length} itens locais • configure a API para carregar todas as subpastas`;
+      const sm = readJson(LS.syncMeta, {}); const last = formatDateTime(sm.at);
+      $('#syncStatus').textContent = last ? 'Catálogo salvo ativo' : 'Catálogo local ativo';
+      $('#syncDetail').textContent = `${state.items.length} itens disponíveis${last ? ` • última sincronização: ${last}` : ' • configure a API para carregar todas as subpastas'}`;
       $('#catalogNoticeText').textContent = 'Sem a API Key, o app mostra o catálogo incluído no ZIP. Com a API, ele percorre as duas pastas e todas as subpastas.';
       $('#catalogNotice').classList.remove('hidden');
     }
@@ -508,13 +556,33 @@ function updateCompleteButton() {
   $('#completeBtn').classList.toggle('is-complete', done);
 }
 
+function modeLabel(mode = state.mode) {
+  return ({ page:'Página', spread:'Dupla', vertical:'Vertical', webtoon:'Webtoon' })[mode] || 'Página';
+}
+function modeIcon(mode = state.mode) {
+  return ({ page:'▣', spread:'▥', vertical:'↕', webtoon:'▤' })[mode] || '▣';
+}
+function isVerticalMode(mode = state.mode) { return mode === 'vertical' || mode === 'webtoon'; }
+function isPagedMode(mode = state.mode) { return mode === 'page' || mode === 'spread'; }
+function pageStep() { return state.mode === 'spread' ? 2 : 1; }
+function normalizedMode(mode) { return ['page','spread','vertical','webtoon'].includes(mode) ? mode : 'page'; }
+function effectiveMode(mode = state.mode) {
+  if (mode === 'spread' && matchMedia('(max-width: 650px)').matches && !matchMedia('(orientation: landscape)').matches) return 'page';
+  return mode;
+}
 function updateReaderPrefsUI() {
   $('#directionBtn').textContent = `Leitura: ${state.direction === 'rtl' ? '←' : '→'}`;
   $('#directionBtn').dataset.arrow = state.direction === 'rtl' ? '←' : '→';
-  $('#modeBtn').textContent = `Modo: ${state.mode === 'page' ? 'Página' : 'Vertical'}`;
-  $('#modeBtn').dataset.short = state.mode === 'page' ? '▣' : '↕';
+  $('#modeBtn').textContent = `Modo: ${modeLabel(state.mode)}`;
+  $('#modeBtn').dataset.short = modeIcon(state.mode);
   $('#zoomLabel').textContent = `${Math.round(state.zoom * 100)}%`;
-  $('#zoomControls').classList.toggle('hidden', state.mode !== 'page' || !['comic','pdf'].includes(extType(state.current || {})));
+  $('#zoomControls').classList.toggle('hidden', !isPagedMode() || !['comic','pdf'].includes(extType(state.current || {})));
+  const auto = $('#autoScrollBtn');
+  if (auto) {
+    auto.classList.toggle('hidden', !isVerticalMode());
+    auto.textContent = state.autoScrollId ? '⏸ Auto' : '▶ Auto';
+    auto.title = state.autoScrollId ? 'Pausar rolagem automática' : 'Iniciar rolagem automática';
+  }
 }
 
 async function openItem(item, forceLarge = false) {
@@ -532,7 +600,7 @@ async function openItem(item, forceLarge = false) {
   if (token !== state.openToken) return;
   state.current = item;
   state.page = progress[item.id]?.page || 0;
-  state.mode = progress[item.id]?.mode === 'vertical' ? 'vertical' : (progress[item.id]?.mode === 'page' ? 'page' : prefs.defaultMode);
+  state.mode = normalizedMode(progress[item.id]?.mode || prefs.defaultMode);
   state.direction = progress[item.id]?.direction || prefs.direction || 'ltr';
   state.zoom = 1;
   $('#reader').classList.remove('hidden'); $('#reader').setAttribute('aria-hidden', 'false');
@@ -746,7 +814,9 @@ async function renderPdfInto(container, index, token, vertical = false) {
   if (token !== state.renderToken || !container?.isConnected) return;
   const base = page.getViewport({ scale: 1 });
   const root = $('#readerBody');
-  const availableWidth = Math.max(280, (vertical ? Math.min(root.clientWidth, 1100) : root.clientWidth) - (vertical ? 8 : 28));
+  const spread = !vertical && effectiveMode() === 'spread';
+  const baseWidth = vertical ? Math.min(root.clientWidth, state.mode === 'webtoon' ? 820 : 1100) : root.clientWidth;
+  const availableWidth = Math.max(spread ? 180 : 280, (baseWidth - (vertical ? 8 : 28)) / (spread ? 2 : 1));
   const availableHeight = Math.max(280, root.clientHeight - 24);
   let scale = availableWidth / base.width;
   if (!vertical && state.fit === 'contain') scale = Math.min(scale, availableHeight / base.height);
@@ -778,17 +848,21 @@ async function renderPdfInto(container, index, token, vertical = false) {
 async function renderPdfPageMode(token) {
   $('#readerFooter').classList.remove('hidden');
   $('#readerLoading').classList.remove('hidden');
-  $('#loadingText').textContent = `Renderizando PDF • página ${state.page + 1}…`;
+  const spread = effectiveMode() === 'spread';
+  const indexes = spread ? [state.page, state.page + 1].filter(i => i < state.pages.length) : [state.page];
+  $('#loadingText').textContent = spread ? `Renderizando PDF • páginas ${indexes.map(i => i + 1).join('–')}…` : `Renderizando PDF • página ${state.page + 1}…`;
   $('#readerBody').classList.add('page-mode');
-  $('#readerBody').innerHTML = `<div class="page-stage ${state.fit === 'width' ? 'fit-width' : ''}"><div id="pdfPageMount" class="pdf-page-mount"><span class="page-placeholder">Página ${state.page + 1}</span></div></div>`;
-  try { await renderPdfInto($('#pdfPageMount'), state.page, token, false); }
-  finally { if (token === state.renderToken) $('#readerLoading').classList.add('hidden'); }
+  const dirClass = spread && state.direction === 'rtl' ? ' spread-rtl' : '';
+  $('#readerBody').innerHTML = `<div class="page-stage ${spread ? 'spread-stage' : ''}${dirClass} ${state.fit === 'width' ? 'fit-width' : ''}">${indexes.map(i => `<div class="pdf-page-mount spread-page" data-pdf-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
+  try {
+    for (const i of indexes) await renderPdfInto($(`[data-pdf-i="${i}"]`), i, token, false);
+  } finally { if (token === state.renderToken) $('#readerLoading').classList.add('hidden'); }
 }
 
 async function renderPdfVerticalMode(token) {
   $('#readerFooter').classList.add('hidden');
   $('#readerBody').classList.remove('page-mode');
-  $('#readerBody').innerHTML = `<div class="vertical-pages pdf-vertical">${state.pages.map((_, i) => `<div class="page-slot pdf-slot" data-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
+  $('#readerBody').innerHTML = `<div class="vertical-pages pdf-vertical ${state.mode === 'webtoon' ? 'webtoon-pages' : ''}">${state.pages.map((_, i) => `<div class="page-slot pdf-slot" data-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
   setupVerticalObserver();
   requestAnimationFrame(() => $(`.page-slot[data-i="${state.page}"]`)?.scrollIntoView({ block: 'start' }));
 }
@@ -835,27 +909,33 @@ async function renderReaderPages() {
   const isPdf = extType(state.current || {}) === 'pdf' && Boolean(state.pdfDoc);
   if (isPdf) {
     try {
-      if (state.mode === 'vertical') await renderPdfVerticalMode(token);
+      if (isVerticalMode()) await renderPdfVerticalMode(token);
       else await renderPdfPageMode(token);
     } catch (err) {
       if (token === state.renderToken && err?.name !== 'RenderingCancelledException') showReaderError('Falha ao renderizar PDF', err.message || String(err));
     }
-  } else if (state.mode === 'vertical') {
+  } else if (isVerticalMode()) {
     $('#readerFooter').classList.add('hidden');
     $('#readerBody').classList.remove('page-mode');
-    $('#readerBody').innerHTML = `<div class="vertical-pages">${state.pages.map((_, i) => `<div class="page-slot" data-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
+    $('#readerBody').innerHTML = `<div class="vertical-pages ${state.mode === 'webtoon' ? 'webtoon-pages' : ''}">${state.pages.map((_, i) => `<div class="page-slot" data-i="${i}"><span class="page-placeholder">Página ${i + 1}</span></div>`).join('')}</div>`;
     setupVerticalObserver();
     requestAnimationFrame(() => $(`.page-slot[data-i="${state.page}"]`)?.scrollIntoView({ block: 'start' }));
   } else {
     $('#readerFooter').classList.remove('hidden');
     $('#readerLoading').classList.remove('hidden'); $('#loadingText').textContent = `Carregando página ${state.page + 1}…`;
     try {
-      const url = await getPageUrl(state.page, token);
+      const spread = effectiveMode() === 'spread';
+      const indexes = spread ? [state.page, state.page + 1].filter(i => i < state.pages.length) : [state.page];
+      const urls = await Promise.all(indexes.map(i => getPageUrl(i, token)));
       if (token !== state.renderToken) return;
       $('#readerBody').classList.add('page-mode');
       const zoomStyle = state.zoom === 1 ? '' : `style="width:${Math.round(state.zoom * 100)}%;max-width:none;height:auto"`;
-      $('#readerBody').innerHTML = `<div class="page-stage ${state.fit === 'width' ? 'fit-width' : ''}"><img src="${url}" alt="Página ${state.page + 1}" ${zoomStyle}></div>`;
-      if (performanceProfile().prefetch) [state.page - 1, state.page + 1].filter(i => i >= 0 && i < state.pages.length).forEach(i => setTimeout(() => getPageUrl(i, token).catch(() => {}), 50));
+      const dirClass = spread && state.direction === 'rtl' ? ' spread-rtl' : '';
+      $('#readerBody').innerHTML = `<div class="page-stage ${spread ? 'spread-stage' : ''}${dirClass} ${state.fit === 'width' ? 'fit-width' : ''}">${urls.map((url, n) => `<img src="${url}" alt="Página ${indexes[n] + 1}" ${zoomStyle}>`).join('')}</div>`;
+      if (performanceProfile().prefetch) {
+        const step = spread ? 2 : 1;
+        [state.page - step, state.page + step].filter(i => i >= 0 && i < state.pages.length).forEach(i => setTimeout(() => getPageUrl(i, token).catch(() => {}), 50));
+      }
     } catch (err) {
       if (token === state.renderToken) showReaderError('Falha ao carregar página', err.message);
     } finally {
@@ -903,7 +983,7 @@ async function loadVerticalSlot(slot) {
 
 
 function cleanupVerticalSlots(force = false) {
-  if (state.mode !== 'vertical' || !state.pages.length) return;
+  if (!isVerticalMode() || !state.pages.length) return;
   const profile = performanceProfile();
   if (!force && !profile.mobile && !profile.eco) return;
   const keep = profile.verticalWindow;
@@ -921,7 +1001,7 @@ function cleanupVerticalSlots(force = false) {
 }
 
 function updateVerticalPosition() {
-  if (state.mode !== 'vertical' || !state.pages.length) return;
+  if (!isVerticalMode() || !state.pages.length) return;
   const rootRect = $('#readerBody').getBoundingClientRect(); let best = state.page; let dist = Infinity;
   for (const slot of $$('.page-slot')) {
     const d = Math.abs(slot.getBoundingClientRect().top - rootRect.top);
@@ -944,7 +1024,9 @@ function getNextIssue() {
 }
 function updatePageControls() {
   if (!state.pages.length) return;
-  $('#pageRange').value = state.page + 1; $('#pageLabel').textContent = `${state.page + 1} / ${state.pages.length}`;
+  $('#pageRange').value = state.page + 1;
+  const end = effectiveMode() === 'spread' ? Math.min(state.pages.length, state.page + 2) : state.page + 1;
+  $('#pageLabel').textContent = effectiveMode() === 'spread' && end > state.page + 1 ? `${state.page + 1}–${end} / ${state.pages.length}` : `${state.page + 1} / ${state.pages.length}`;
   const next = getNextIssue();
   const showNext = state.page >= state.pages.length - 1 && Boolean(next);
   $('#nextIssueBtn').classList.toggle('hidden', !showNext);
@@ -952,7 +1034,8 @@ function updatePageControls() {
 }
 function updateProgress() {
   if (!state.current || !state.pages.length) return;
-  const pct = Math.round(((state.page + 1) / state.pages.length) * 100);
+  const readThrough = effectiveMode() === 'spread' ? Math.min(state.pages.length, state.page + 2) : state.page + 1;
+  const pct = Math.round((readThrough / state.pages.length) * 100);
   progress[state.current.id] = { percent: pct, page: state.page, mode: state.mode, direction: state.direction, updated: Date.now() };
   saveProgress(); updateLibraryStats(); updateCompleteButton();
 }
@@ -963,6 +1046,7 @@ async function setPage(n) {
 }
 
 async function cleanupReaderData() {
+  stopAutoScroll();
   state.readerDownloadController?.abort();
   state.readerDownloadController = null;
   stopVerticalObserver();
@@ -976,7 +1060,7 @@ async function cleanupReaderData() {
   state.archive = null; state.pages = []; $('#readerBody')?.classList.remove('page-mode');
 }
 async function closeReader() {
-  if (state.mode === 'vertical') updateVerticalPosition();
+  if (isVerticalMode()) updateVerticalPosition();
   state.openToken++;
   await cleanupReaderData();
   $('#reader').classList.add('hidden'); $('#reader').setAttribute('aria-hidden', 'true');
@@ -992,7 +1076,7 @@ function markComplete() {
 
 function openSettings() {
   $('#apiKeyInput').value = getApiKey();
-  $('#defaultModeSelect').value = prefs.defaultMode || 'page';
+  $('#defaultModeSelect').value = normalizedMode(prefs.defaultMode);
   $('#directionSelect').value = prefs.direction || 'ltr';
   if ($('#performanceSelect')) $('#performanceSelect').value = prefs.performance || 'auto';
   if ($('#performanceHint')) $('#performanceHint').textContent = `Ativo: ${performanceLabel()} • ${navigator.deviceMemory ? navigator.deviceMemory + ' GB RAM' : 'RAM não informada'}${navigator.hardwareConcurrency ? ' • ' + navigator.hardwareConcurrency + ' núcleos' : ''}`;
@@ -1054,7 +1138,7 @@ $('#closeSettings').addEventListener('click', closeSettings);
 $('#settingsModal').addEventListener('click', e => { if (e.target === $('#settingsModal')) closeSettings(); });
 $('#saveKeyBtn').addEventListener('click', async () => {
   const key = $('#apiKeyInput').value.trim();
-  prefs.defaultMode = $('#defaultModeSelect').value === 'vertical' ? 'vertical' : 'page';
+  prefs.defaultMode = normalizedMode($('#defaultModeSelect').value);
   prefs.direction = $('#directionSelect').value === 'rtl' ? 'rtl' : 'ltr';
   prefs.performance = ['auto','eco','quality'].includes($('#performanceSelect')?.value) ? $('#performanceSelect').value : 'auto';
   savePrefs();
@@ -1073,13 +1157,16 @@ $('#downloadCurrentBtn').addEventListener('click', () => downloadItem(state.curr
 $('#offlineCurrentBtn').addEventListener('click', async () => { if (state.current) { await toggleOfflineItem(state.current); updateOfflineCurrentButton(); } });
 $('#clearOfflineBtn').addEventListener('click', clearOfflineLibrary);
 $('#completeBtn').addEventListener('click', markComplete);
-$('#prevPage').addEventListener('click', () => setPage(state.page - 1));
-$('#nextPage').addEventListener('click', () => setPage(state.page + 1));
+$('#prevPage').addEventListener('click', () => setPage(state.page - pageStep()));
+$('#nextPage').addEventListener('click', () => setPage(state.page + pageStep()));
 $('#nextIssueBtn').addEventListener('click', async () => { const next = getNextIssue(); if (next) await openItem(next); });
 $('#pageRange').addEventListener('input', e => setPage(Number(e.target.value) - 1));
 $('#modeBtn').addEventListener('click', async () => {
   if (!state.pages.length) return;
-  state.mode = state.mode === 'page' ? 'vertical' : 'page';
+  stopAutoScroll();
+  const modes = ['page','spread','vertical','webtoon'];
+  state.mode = modes[(modes.indexOf(normalizedMode(state.mode)) + 1) % modes.length];
+  if (state.mode === 'spread' && effectiveMode() !== 'spread') toast('Página dupla ficará ativa ao usar tela maior ou celular na horizontal.');
   updateReaderPrefsUI();
   await renderReaderPages();
 });
@@ -1094,12 +1181,31 @@ $('#directionBtn').addEventListener('click', () => {
 });
 async function setZoom(value) {
   state.zoom = Math.max(.6, Math.min(3, Math.round(value * 10) / 10)); updateReaderPrefsUI();
-  if (state.mode === 'page' && state.pages.length) await renderReaderPages();
+  if (isPagedMode() && state.pages.length) await renderReaderPages();
 }
 $('#zoomOutBtn').addEventListener('click', () => setZoom(state.zoom - .2));
 $('#zoomInBtn').addEventListener('click', () => setZoom(state.zoom + .2));
 $('#zoomLabel').addEventListener('click', () => setZoom(1));
 $('#fullscreenBtn').addEventListener('click', () => document.fullscreenElement ? document.exitFullscreen() : $('#reader').requestFullscreen?.());
+function stopAutoScroll() {
+  if (state.autoScrollId) cancelAnimationFrame(state.autoScrollId);
+  state.autoScrollId = 0; state.autoScrollLast = 0; updateReaderPrefsUI();
+}
+function autoScrollFrame(ts) {
+  if (!state.autoScrollId || !isVerticalMode() || $('#reader').classList.contains('hidden')) return stopAutoScroll();
+  if (!state.autoScrollLast) state.autoScrollLast = ts;
+  const dt = Math.min(50, ts - state.autoScrollLast); state.autoScrollLast = ts;
+  const root = $('#readerBody');
+  root.scrollTop += (Number(prefs.autoScrollSpeed || 46) * dt) / 1000;
+  if (root.scrollTop + root.clientHeight >= root.scrollHeight - 3) return stopAutoScroll();
+  state.autoScrollId = requestAnimationFrame(autoScrollFrame);
+}
+function toggleAutoScroll() {
+  if (!isVerticalMode()) return;
+  if (state.autoScrollId) return stopAutoScroll();
+  state.autoScrollLast = 0; state.autoScrollId = requestAnimationFrame(autoScrollFrame); updateReaderPrefsUI();
+}
+$('#autoScrollBtn')?.addEventListener('click', toggleAutoScroll);
 $('#themeBtn').addEventListener('click', () => {
   document.documentElement.classList.toggle('light');
   storageSet(LS.theme, document.documentElement.classList.contains('light') ? 'light' : 'dark');
@@ -1123,40 +1229,40 @@ document.addEventListener('keydown', e => {
   if (e.target?.matches?.('input,select,textarea,[contenteditable="true"]')) return;
   if ($('#reader').classList.contains('hidden')) return;
   if (e.key === 'Escape') { closeReader(); return; }
-  if (state.mode === 'page' && e.key === 'ArrowRight') setPage(state.page + (state.direction === 'rtl' ? -1 : 1));
-  if (state.mode === 'page' && e.key === 'ArrowLeft') setPage(state.page + (state.direction === 'rtl' ? 1 : -1));
-  if (state.mode === 'page' && (e.key === '+' || e.key === '=')) setZoom(state.zoom + .2);
-  if (state.mode === 'page' && e.key === '-') setZoom(state.zoom - .2);
-  if (state.mode === 'page' && e.key === '0') setZoom(1);
+  if (isPagedMode() && e.key === 'ArrowRight') setPage(state.page + (state.direction === 'rtl' ? -pageStep() : pageStep()));
+  if (isPagedMode() && e.key === 'ArrowLeft') setPage(state.page + (state.direction === 'rtl' ? pageStep() : -pageStep()));
+  if (isPagedMode() && (e.key === '+' || e.key === '=')) setZoom(state.zoom + .2);
+  if (isPagedMode() && e.key === '-') setZoom(state.zoom - .2);
+  if (isPagedMode() && e.key === '0') setZoom(1);
 });
 
 $('#readerBody').addEventListener('click', e => {
-  if (state.mode !== 'page' || !state.pages.length || e.target.closest('button,a')) return;
+  if (!isPagedMode() || !state.pages.length || e.target.closest('button,a')) return;
   const rect = $('#readerBody').getBoundingClientRect();
   const ratio = (e.clientX - rect.left) / Math.max(1, rect.width);
   if (ratio > .30 && ratio < .70) return;
   const leftZone = ratio <= .30;
   const next = state.direction === 'rtl' ? leftZone : !leftZone;
-  setPage(state.page + (next ? 1 : -1));
+  setPage(state.page + (next ? pageStep() : -pageStep()));
 });
-$('#readerBody').addEventListener('dblclick', e => { if (state.mode === 'page' && e.target.closest('img,canvas')) setZoom(state.zoom === 1 ? 1.6 : 1); });
+$('#readerBody').addEventListener('dblclick', e => { if (isPagedMode() && e.target.closest('img,canvas')) setZoom(state.zoom === 1 ? 1.6 : 1); });
 $('#readerBody').addEventListener('touchstart', e => {
-  if (state.mode !== 'page' || !state.pages.length || e.touches.length !== 1 || state.zoom > 1.01) return;
+  if (!isPagedMode() || !state.pages.length || e.touches.length !== 1 || state.zoom > 1.01) return;
   const t = e.touches[0]; state.touchStart = { x: t.clientX, y: t.clientY, time: Date.now() };
 }, { passive: true });
 $('#readerBody').addEventListener('touchend', e => {
   const start = state.touchStart; state.touchStart = null;
-  if (!start || state.mode !== 'page' || !state.pages.length || state.zoom > 1.01) return;
+  if (!start || !isPagedMode() || !state.pages.length || state.zoom > 1.01) return;
   const t = e.changedTouches?.[0]; if (!t) return;
   const dx = t.clientX - start.x, dy = t.clientY - start.y;
   if (Date.now() - start.time > 700 || Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
   const swipeLeft = dx < 0;
   const next = state.direction === 'rtl' ? !swipeLeft : swipeLeft;
-  setPage(state.page + (next ? 1 : -1));
+  setPage(state.page + (next ? pageStep() : -pageStep()));
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '5.2.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '1.1.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -1191,5 +1297,13 @@ $('#installBtn').addEventListener('click', async () => {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cleanupVerticalSlots(true); });
 
 if (storageGet(LS.theme) === 'light') document.documentElement.classList.add('light');
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').then(reg => { reg.update().catch(() => {}); }).catch(() => {});
+setNetworkStatus();
+window.addEventListener('online', () => { setNetworkStatus(); warmReaderRuntimes().catch(() => {}); });
+window.addEventListener('offline', setNetworkStatus);
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(async reg => {
+    reg.update().catch(() => {});
+    try { await navigator.serviceWorker.ready; await new Promise(r => setTimeout(r, 250)); await warmReaderRuntimes(); } catch {}
+  }).catch(() => { warmReaderRuntimes().catch(() => {}); });
+} else warmReaderRuntimes().catch(() => {});
 (async () => { await refreshOfflineIndex(); await updateOfflineStorageInfo(); await loadLibrary(); })();

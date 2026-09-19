@@ -7,8 +7,8 @@
   <meta name="description" content="Leitor de mangás e HQs em PDF, CBR e CBZ conectado a uma biblioteca do Google Drive." />
   <title>Manga HQ Reader v5.2</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <link rel="icon" href="./icon-64.png" type="image/png" />
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
   <link rel="stylesheet" href="./css/app.css" />
 </head>
 <body>
@@ -24,7 +24,7 @@
         <button id="installBtn" class="ghost hidden">Instalar</button>
         <button id="driveBtn" class="ghost">Pastas Drive</button>
         <button id="settingsBtn" class="icon-btn" title="Configurações">⚙</button>
-        <button id="themeBtn" class="icon-btn" title="Alternar tema">◐</button>
+        <span id="networkStatus" class="network-status" role="status" aria-live="polite">● Online</span><button id="themeBtn" class="icon-btn" title="Alternar tema">◐</button>
       </div>
     </header>
 
@@ -103,7 +103,8 @@
         <button id="offlineCurrentBtn" class="ghost offline-reader" title="Salvar para ler sem internet">☁ Salvar offline</button>
         <button id="downloadCurrentBtn" class="ghost download-reader" title="Baixar arquivo">⇩ Baixar</button>
         <button id="completeBtn" class="ghost" title="Marcar como lido">✓ Marcar lido</button>
-        <button id="modeBtn" class="ghost">Modo: Página</button>
+        <button id="modeBtn" class="ghost" title="Alternar modo de leitura">Modo: Página</button>
+        <button id="autoScrollBtn" class="ghost hidden" title="Rolagem automática">▶ Auto</button>
         <button id="directionBtn" class="ghost" title="Direção da leitura">Leitura: →</button>
         <button id="fitBtn" class="ghost">Ajustar</button>
         <div id="zoomControls" class="zoom-controls">
@@ -136,11 +137,11 @@
         <label class="field"><span>Google Drive API Key</span><input id="apiKeyInput" type="password" autocomplete="off" placeholder="Cole sua chave aqui" /></label>
         <p class="help">A pasta pública já está configurada. A chave permite listar novos arquivos e baixar CBR/CBZ diretamente no navegador. Restrinja a chave ao endereço do seu GitHub Pages e habilite somente a Google Drive API.</p>
         <div class="settings-grid">
-          <label class="field"><span>Modo padrão</span><select id="defaultModeSelect"><option value="page">Página</option><option value="vertical">Vertical</option></select></label>
+          <label class="field"><span>Modo padrão</span><select id="defaultModeSelect"><option value="page">Página única</option><option value="spread">Página dupla</option><option value="vertical">Vertical contínuo</option><option value="webtoon">Webtoon</option></select></label>
           <label class="field"><span>Direção padrão</span><select id="directionSelect"><option value="ltr">Esquerda → direita</option><option value="rtl">Direita → esquerda (mangá)</option></select></label>
           <label class="field"><span>Desempenho</span><select id="performanceSelect"><option value="auto">Automático</option><option value="eco">Econômico / celular fraco</option><option value="quality">Qualidade máxima</option></select><small id="performanceHint" class="field-hint"></small></label>
         </div>
-        <div class="config-status" id="configStatus"></div>
+        <div class="config-status" id="configStatus"></div><div class="runtime-status" id="runtimeStatus">Preparando motores de leitura…</div>
         <div class="offline-settings"><div><strong>Biblioteca offline</strong><small id="offlineStorageInfo">Calculando armazenamento…</small></div><button id="clearOfflineBtn" class="secondary-btn">Limpar offline</button></div>
         <div class="data-actions"><button id="exportDataBtn" class="secondary-btn">Exportar progresso</button><button id="importDataBtn" class="secondary-btn">Importar progresso</button><button id="resetProgressBtn" class="danger-btn">Limpar progresso</button></div>
         <div class="modal-actions"><button id="clearKeyBtn" class="secondary-btn">Remover chave</button><button id="saveKeyBtn">Salvar e sincronizar</button></div>

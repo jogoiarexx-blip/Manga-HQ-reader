@@ -1,81 +1,28 @@
-## v5.4.0
-
-- adiciona Batcaverna como fonte externa separada;
-- botão para abrir site e acervo externo;
-- mantém as duas bibliotecas próprias sem misturar conteúdo externo;
-- atualiza PWA/cache para v5.4.0.
-
-## v5.3.0
-- modo de desempenho Automático, Econômico e Qualidade máxima
-- cache de páginas adaptativo conforme celular/RAM/CPU
-- PDFs usam DPR reduzido em aparelhos limitados para economizar RAM e bateria
-- páginas verticais distantes são descarregadas da memória e recarregadas quando necessário
-- correção: páginas removidas do cache agora podem ser carregadas novamente
-- pré-carregamento vizinho desativado em modo econômico
-- otimizações de scroll, composição e efeitos visuais no celular
-- limpeza extra de memória quando o app vai para segundo plano
-
-## v5.3.0
-- leitor PDF próprio com PDF.js 6.3.289
-- progresso real por página para PDFs
-- PDF em modo página e vertical
-- zoom, ajuste à largura, swipe e navegação por teclado também em PDFs
-- PDFs offline usam o mesmo leitor próprio
-- carregamento por páginas no modo vertical para reduzir uso de memória
-- mantém fallback de erro com acesso ao Drive quando a origem bloquear CORS
-
-## v5.0.0
-- revisão geral de arquitetura, PWA, Drive, offline e leitor
-- correção de limpeza perigosa de cache no github.io
-- correção do 404 antigo
-- duas pastas do Drive acessíveis no app
-- coleções organizadas por subpastas quando disponível
-- busca inclui caminho da coleção
-- downloads de leitura e offline com controladores independentes
-- checagem de espaço antes do modo offline
-- status claro de catálogo local versus sincronização completa
-- backup versionado dinamicamente
-
-## v4.4.0
-- biblioteca offline com IndexedDB
-- aba Offline
-- salvar/remover offline por arquivo
-- leitura offline de PDF/CBR/CBZ
-- indicador de armazenamento e limpeza dos arquivos offline
-
-## v4.1.0
-- nova logo oficial integrada
-- download direto nos cards
-- download dentro do leitor
-- novos ícones PWA derivados da identidade visual
-
-## v4.1.0
-- redesign visual completo: interface mais bonita, moderna e premium
-- hero, cards, coleção, toolbar, sidebar e modais refeitos
-- melhorias de contraste, sombras, gradientes e glassmorphism
-- refinamento visual do leitor e da versão mobile
-
 # Changelog
 
-## 3.1.0
+## 1.1.1
+- Novo ícone oficial do Manga HQ Reader aplicado ao PWA, favicon e atalho da tela inicial.
+- Adicionados tamanhos 64, 180, 192 e 512 px para melhor compatibilidade entre PC e celular.
 
-### Corrigido
-- cancelamento de download e proteção contra resultados assíncronos antigos;
-- vazamento de URLs Blob após fechar/trocar leitura;
-- reconstrução desnecessária da biblioteca a cada página;
-- faixa vazia do leitor sem rodapé;
-- controles ausentes/espremidos em telas pequenas;
-- atalhos disparando enquanto modais/campos estavam ativos;
-- contagem de favoritos/progresso de itens fora da biblioteca;
-- arquivos lixo de macOS tratados como páginas;
-- diagnóstico de CBR/RAR criptografado;
-- busca sem tolerância a acentos;
-- sincronização limitada apenas à pasta raiz do Drive.
 
-### Melhorado
-- swipe e zonas laterais de navegação;
-- limites de arquivos grandes adaptados à memória do aparelho;
-- ícones PWA 192/512;
-- cache de runtime das dependências de descompactação;
-- segurança ao abrir links externos;
-- mensagens de erro e fallback para arquivo local.
+## v1.1.0 — novos modos de leitura
+
+- Adicionados quatro modos: Página única, Página dupla, Vertical contínuo e Webtoon.
+- Página dupla respeita leitura ocidental (LTR) e mangá (RTL).
+- Em celulares estreitos na vertical, Página dupla cai automaticamente para página única para preservar legibilidade.
+- Rolagem automática disponível nos modos Vertical e Webtoon.
+- Progresso, barra de páginas, gestos, teclado e botões foram adaptados ao avanço de duas páginas.
+- PDF e CBR/CBZ usam os novos modos de forma consistente.
+- Mantidas as duas bibliotecas do Google Drive, catálogo local, offline, PWA e Batcaverna externa.
+
+## v1.0.0 — nova base oficial
+
+- Nova base de versionamento do Manga HQ Reader.
+- Leitor PDF com PDF.js.
+- Suporte a PDF, CBR, CBZ, RAR e ZIP compatíveis.
+- Progresso por página, favoritos e continuar lendo.
+- Leitura offline com IndexedDB.
+- Desempenho adaptativo para PC e celular.
+- Duas bibliotecas do Google Drive.
+- Batcaverna como fonte externa.
+- PWA instalável, status online/offline e última sincronização.
