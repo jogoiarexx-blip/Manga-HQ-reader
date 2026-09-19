@@ -2,7 +2,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '1.1.0',
+  appVersion: '1.2.0',
   folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
   folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
@@ -1262,7 +1262,7 @@ $('#readerBody').addEventListener('touchend', e => {
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '1.1.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '1.2.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

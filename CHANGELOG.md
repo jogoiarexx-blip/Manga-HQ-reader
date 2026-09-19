@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+- Adicionados 14 arquivos de Dandadan ao catálogo local.
+- Adicionadas 6 edições de Sucata Joe ao catálogo local.
+- Catálogo local passa de 64 para 84 itens.
+- Mantidos os modos Página, Dupla, Vertical e Webtoon e o novo ícone do app.
+
 ## 1.1.1
 - Novo ícone oficial do Manga HQ Reader aplicado ao PWA, favicon e atalho da tela inicial.
 - Adicionados tamanhos 64, 180, 192 e 512 px para melhor compatibilidade entre PC e celular.

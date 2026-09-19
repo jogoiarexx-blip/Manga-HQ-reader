@@ -1,8 +1,13 @@
-# Manga HQ Reader — GitHub Pages v1.1.1
+# Manga HQ Reader — GitHub Pages v1.2.0
 
 Leitor estático de mangás/HQs feito para rodar diretamente no GitHub Pages, sem Node.js, Express ou servidor próprio.
 
-## Novidades da v1.1.1
+## Novidades da v1.2.0
+
+- catálogo local ampliado com **Dandadan** (14 arquivos)
+- catálogo local ampliado com **Sucata Joe** (6 edições)
+- total local de fallback: **84 itens**
+- as duas bibliotecas do Google Drive continuam sincronizando recursivamente
 
 - **Página única** para leitura tradicional;
 - **Página dupla** para HQs e mangás em telas maiores;
