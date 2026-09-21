@@ -1,3 +1,10 @@
+## 2.2.2 — Catálogo imediato da Biblioteca 5
+
+- Adiciona Godzilla vs Power Rangers #1 a #5 ao catálogo estático.
+- As cinco edições agora aparecem mesmo antes da primeira sincronização da Drive API.
+- Mantém as pastas reais do Google Drive como origem das páginas.
+- Renova o cache PWA para evitar que navegadores continuem exibindo a versão anterior.
+
 ## 2.2.1 — Biblioteca 5
 
 - Adiciona a pasta pública do Google Drive como Biblioteca 5.
