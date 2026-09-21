@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
   <meta name="description" content="Leitor de mangás e HQs em PDF, CBR e CBZ conectado a uma biblioteca do Google Drive." />
-  <title>Manga HQ Reader v5.2</title>
+  <title>Manga HQ Reader v1.7.0</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-64.png" type="image/png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
@@ -37,6 +37,7 @@
           <button class="nav" data-filter="favorites">★ <span>Favoritos</span></button>
           <button class="nav" data-filter="completed">✓ <span>Lidos</span></button>
           <button class="nav" data-filter="offline">⇩ <span>Offline</span></button>
+          <button class="nav" data-filter="new">✦ <span>Novos</span></button>
           <button class="nav" data-filter="pdf">PDF <span>PDFs</span></button>
           <button class="nav" data-filter="comic">CBR <span>HQs/Mangás</span></button>
         </nav>
@@ -51,7 +52,7 @@
           <div class="hero-copy">
             <span class="eyebrow">DUAS BIBLIOTECAS • UM LEITOR</span>
             <h1>Mangás e HQs em um leitor só.</h1>
-            <p>Feito para GitHub Pages: duas bibliotecas do Google Drive, fonte externa Batcaverna, PDF, CBR e CBZ, favoritos, progresso, downloads e leitura offline.</p>
+            <p>Feito para GitHub Pages: três bibliotecas do Google Drive, fonte externa Batcaverna, PDF, CBR e CBZ, favoritos, progresso, downloads e leitura offline.</p>
             <div class="hero-tags"><span>PDF</span><span>CBR & CBZ</span><span>Progresso automático</span><span>Leitura offline</span></div>
           </div>
           <div class="stats">
@@ -78,6 +79,13 @@
 
         <div class="toolbar">
           <label class="search"><span>⌕</span><input id="searchInput" placeholder="Buscar título, volume, edição..." /></label>
+          <select id="sourceSelect" aria-label="Filtrar por fonte">
+            <option value="all">Todas as fontes</option>
+            <option value="library-1">Biblioteca 1</option>
+            <option value="library-2">Biblioteca 2</option>
+            <option value="library-3">Biblioteca 3 — Batman</option>
+            <option value="offline">Offline/local</option>
+          </select>
           <select id="sortSelect" aria-label="Ordenar biblioteca">
             <option value="name">Nome A–Z</option>
             <option value="name-desc">Nome Z–A</option>
@@ -91,6 +99,7 @@
 
         <div id="emptyState" class="empty hidden">Nenhum item encontrado.</div>
         <div id="libraryGrid" class="grid"></div>
+        <button id="loadMoreBtn" class="load-more hidden">Carregar mais</button>
       </section>
     </main>
   </div>
@@ -99,6 +108,7 @@
     <div class="reader-topbar">
       <button id="closeReader" class="icon-btn" title="Voltar">←</button>
       <div class="reader-title-wrap"><strong id="readerTitle">Leitor</strong><small id="readerMeta"></small></div>
+      <button id="readerMenuBtn" class="icon-btn reader-menu-btn" title="Controles do leitor" aria-label="Controles do leitor" aria-expanded="false">⋯</button>
       <div class="reader-controls">
         <button id="offlineCurrentBtn" class="ghost offline-reader" title="Salvar para ler sem internet">☁ Salvar offline</button>
         <button id="downloadCurrentBtn" class="ghost download-reader" title="Baixar arquivo">⇩ Baixar</button>
@@ -119,7 +129,7 @@
     <div id="readerFooter" class="reader-footer hidden">
       <button id="prevPage">‹</button>
       <input id="pageRange" type="range" min="1" max="1" value="1" />
-      <span id="pageLabel">1 / 1</span>
+      <label class="page-jump" title="Ir para página"><input id="pageNumberInput" type="number" min="1" value="1" inputmode="numeric" aria-label="Ir para página" /><span id="pageLabel">1 / 1</span></label>
       <button id="nextPage">›</button>
       <button id="nextIssueBtn" class="next-issue hidden">Próxima edição →</button>
     </div>
@@ -140,7 +150,23 @@
           <label class="field"><span>Modo padrão</span><select id="defaultModeSelect"><option value="page">Página única</option><option value="spread">Página dupla</option><option value="vertical">Vertical contínuo</option><option value="webtoon">Webtoon</option></select></label>
           <label class="field"><span>Direção padrão</span><select id="directionSelect"><option value="ltr">Esquerda → direita</option><option value="rtl">Direita → esquerda (mangá)</option></select></label>
           <label class="field"><span>Desempenho</span><select id="performanceSelect"><option value="auto">Automático</option><option value="eco">Econômico / celular fraco</option><option value="quality">Qualidade máxima</option></select><small id="performanceHint" class="field-hint"></small></label>
+          <label class="field"><span>Velocidade da rolagem automática</span><select id="autoScrollSpeedSelect"><option value="28">Lenta</option><option value="46">Normal</option><option value="70">Rápida</option><option value="100">Muito rápida</option></select></label>
         </div>
+        <div class="drive-health">
+          <div><strong>Conexão com Google Drive</strong><small id="driveHealthText">Aguardando teste…</small></div>
+          <button id="testDriveBtn" class="secondary-btn">Testar conexão</button>
+        </div>
+        <details class="drive-help">
+          <summary>Como ler os arquivos do Drive no app?</summary>
+          <ol>
+            <li>Deixe as pastas como públicas em <b>Qualquer pessoa com o link</b>.</li>
+            <li>Crie uma API Key no Google Cloud com a <b>Google Drive API</b> ativada.</li>
+            <li>Restrinja a chave ao endereço do seu GitHub Pages e à Google Drive API.</li>
+            <li>Cole a chave acima, toque em <b>Testar conexão</b> e depois em <b>Salvar e sincronizar</b>.</li>
+            <li>Na biblioteca, toque em <b>Ler agora</b>. PDF, CBR e CBZ abrem no leitor interno.</li>
+          </ol>
+          <p>Arquivos privados exigem autenticação OAuth; uma API Key sozinha serve para conteúdo público.</p>
+        </details>
         <div class="config-status" id="configStatus"></div><div class="runtime-status" id="runtimeStatus">Preparando motores de leitura…</div>
         <div class="offline-settings"><div><strong>Biblioteca offline</strong><small id="offlineStorageInfo">Calculando armazenamento…</small></div><button id="clearOfflineBtn" class="secondary-btn">Limpar offline</button></div>
         <div class="data-actions"><button id="exportDataBtn" class="secondary-btn">Exportar progresso</button><button id="importDataBtn" class="secondary-btn">Importar progresso</button><button id="resetProgressBtn" class="danger-btn">Limpar progresso</button></div>
@@ -152,7 +178,7 @@
   <div id="driveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <div class="modal-card compact">
       <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Duas bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
-      <div class="modal-body"><div id="driveRoots" class="drive-roots"></div><div id="externalSources" class="external-sources"></div></div>
+      <div class="modal-body"><div id="driveSummary" class="drive-summary"></div><div id="driveRoots" class="drive-roots"></div><div id="externalSources" class="external-sources"></div></div>
     </div>
   </div>
 

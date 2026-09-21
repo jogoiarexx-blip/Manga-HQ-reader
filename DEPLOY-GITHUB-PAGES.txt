@@ -1,4 +1,4 @@
-MANGA HQ READER v1.2.0 — GITHUB PAGES
+MANGA HQ READER v1.7.0 — GITHUB PAGES
 
 1. Extraia o ZIP.
 2. Envie TODO o conteúdo desta pasta para a raiz do repositório GitHub.
@@ -16,5 +16,5 @@ O service worker v5 limpa somente caches antigos do Manga HQ Reader e não inter
 Ao publicar uma nova versão, abra o site e recarregue uma vez.
 
 GOOGLE DRIVE:
-As duas pastas configuradas são sincronizadas quando uma Google Drive API Key válida está salva nas configurações.
+As três bibliotecas configuradas são sincronizadas quando uma Google Drive API Key válida está salva nas configurações.
 Depois da primeira sincronização completa, o catálogo de metadados também fica salvo no navegador como fallback local.

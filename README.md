@@ -1,13 +1,13 @@
-# Manga HQ Reader — GitHub Pages v1.2.0
+# Manga HQ Reader — GitHub Pages v1.7.0
 
 Leitor estático de mangás/HQs feito para rodar diretamente no GitHub Pages, sem Node.js, Express ou servidor próprio.
 
-## Novidades da v1.2.0
+## Novidades da v1.7.0
 
 - catálogo local ampliado com **Dandadan** (14 arquivos)
 - catálogo local ampliado com **Sucata Joe** (6 edições)
-- total local de fallback: **84 itens**
-- as duas bibliotecas do Google Drive continuam sincronizando recursivamente
+- catálogo estático completo desta versão: **230 itens** (65 da Biblioteca 1 + 165 da Biblioteca 2)
+- três bibliotecas do Google Drive sincronizam recursivamente
 
 - **Página única** para leitura tradicional;
 - **Página dupla** para HQs e mangás em telas maiores;
@@ -22,10 +22,17 @@ Leitor estático de mangás/HQs feito para rodar diretamente no GitHub Pages, se
 
 - PDF.js, CBR/CBZ/RAR/ZIP;
 - offline via IndexedDB;
-- duas bibliotecas do Google Drive;
+- três bibliotecas do Google Drive;
 - Batcaverna como fonte externa;
 - favoritos, coleções e continuar lendo;
 - PWA e otimizações para desktop/celular.
+
+## Mobile v1.7.0
+- Navegação inferior rolável e legível.
+- Leitor com painel de controles próprio para telas pequenas.
+- Cards compactos e home reduzida.
+- Modais estilo bottom-sheet e suporte a safe-area.
+- Melhor comportamento de swipe/toque no leitor.
 
 ## Recursos
 
@@ -105,7 +112,7 @@ PDF público usa o preview do Google Drive. Por isso o app não recebe o número
 
 ## Duas bibliotecas do Google Drive
 
-Esta versão mantém as duas pastas configuradas ao mesmo tempo. Sem chave de API, o catálogo local contém os itens conhecidos das duas raízes. Com uma Google Drive API Key, o botão Atualizar percorre recursivamente as duas pastas e suas subpastas, mesclando os arquivos e removendo duplicados pelo ID do Drive.
+Esta versão mantém três pastas do Google Drive configuradas ao mesmo tempo. Sem chave de API, esta versão já abre com um snapshot local de 230 itens encontrados nas duas bibliotecas. Com uma Google Drive API Key, o botão Atualizar percorre recursivamente as três bibliotecas e suas subpastas, encontra alterações mais recentes, mescla os arquivos e remove duplicados pelo ID do Drive.
 
 
 ## Revisão geral
@@ -113,12 +120,12 @@ Esta versão mantém as duas pastas configuradas ao mesmo tempo. Sem chave de AP
 - correção do cache PWA para não apagar caches de outros projetos do mesmo github.io
 - service worker atualizado e verificação de update ao abrir o app
 - 404 antigo removido; agora é um redirecionador leve para a biblioteca atual
-- botão Pastas Drive mostra as duas bibliotecas separadamente
+- botão Pastas Drive mostra as três bibliotecas separadamente
 - coleções agora aproveitam o caminho real das subpastas do Drive
 - busca também encontra nomes de pastas/coleções
 - downloads do leitor e salvamentos offline não se cancelam mais mutuamente
 - verificação de espaço disponível antes de salvar arquivos offline grandes
-- catálogo local informa claramente quando é um fallback parcial
+- catálogo local traz um snapshot completo das duas bibliotecas na data desta versão; a API serve para buscar mudanças posteriores
 - backup passa a registrar a versão atual do app automaticamente
 
 
@@ -134,6 +141,15 @@ O leitor possui modo de desempenho Automático, Econômico e Qualidade máxima. 
 ## Batcaverna como fonte externa
 
 - adiciona **Batcaverna — Acervo Externo** à janela de fontes;
-- mantém as duas bibliotecas pessoais sincronizadas separadamente;
+- mantém as três bibliotecas do Drive sincronizadas separadamente;
 - oferece botões para abrir o site oficial e o Drive externo;
 - não copia nem redistribui os arquivos externos dentro do projeto.
+
+
+## Google Drive
+Para sincronizar e ler diretamente no leitor interno, mantenha as pastas públicas, ative a Google Drive API em um projeto do Google Cloud e informe uma API Key restrita ao domínio do GitHub Pages. O app inclui um botão de teste de conexão nas Configurações. Arquivos privados exigem OAuth 2.0.
+
+
+## Biblioteca 3 — Batman
+
+Novo acervo integrado: `1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw`. A sincronização pela Drive API percorre suas sagas e subpastas recursivamente. O snapshot estático desta versão continua com os 230 itens já catalogados das Bibliotecas 1 e 2; os itens da Biblioteca 3 aparecem após sincronizar pela API.

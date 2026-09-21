@@ -4,9 +4,9 @@
 // pelo botão Configurações do próprio app ou preencha driveApiKey abaixo. O navegador ainda
 // pode bloquear alguns downloads por regras de acesso/CORS; o app mantém arquivo local como fallback.
 window.MHQR_CONFIG = {
-  appVersion: '1.2.0',
-  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
-  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
+  appVersion: '1.7.0',
+  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw'],
+  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
   folderUrl: 'https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
   externalSources: [

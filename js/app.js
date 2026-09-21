@@ -2,9 +2,9 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '1.2.0',
-  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
-  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK'],
+  appVersion: '1.7.0',
+  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw'],
+  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
   folderUrl: 'https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
   driveApiKey: '',
@@ -65,7 +65,7 @@ const readJson = (key, fallback) => {
 };
 
 const state = {
-  items: [], filter: 'all', search: '', sort: 'name', current: null,
+  items: [], filter: 'all', source: 'all', search: '', sort: 'name', current: null, renderLimit: 60,
   pages: [], page: 0, mode: 'page', fit: 'contain', direction: 'ltr', zoom: 1, collection: '', archive: null,
   pageUrls: new Map(), pageUse: new Map(), verticalObserver: null,
   verticalScrollHandler: null, renderToken: 0, openToken: 0, pdfObjectUrl: '', pdfDoc: null, pdfRenderTask: null, largePending: null,
@@ -380,9 +380,10 @@ async function loadLibrary() {
       try {
         state.items = await listDriveFolder(key);
         saveCatalogCache(state.items);
-        storageSet(LS.syncMeta, JSON.stringify({ at: Date.now(), count: state.items.length }));
+        const syncedCounts = libraryCounts();
+        storageSet(LS.syncMeta, JSON.stringify({ at: Date.now(), count: state.items.length, counts: syncedCounts }));
         $('#syncStatus').textContent = 'Sincronizado com Drive';
-        $('#syncDetail').textContent = `${state.items.length} arquivos sincronizados nas duas bibliotecas • agora`;
+        $('#syncDetail').textContent = `${state.items.length} arquivos • ${Array.from({length:(CONFIG.folderIds||[]).length},(_,i)=>`Biblioteca ${i+1}: ${syncedCounts[`library-${i+1}`]||0}`).join(' • ')} • agora`;
         $('#catalogNotice').classList.add('hidden');
       } catch (err) {
         state.items = await loadStaticCatalog();
@@ -398,7 +399,7 @@ async function loadLibrary() {
       const sm = readJson(LS.syncMeta, {}); const last = formatDateTime(sm.at);
       $('#syncStatus').textContent = last ? 'Catálogo salvo ativo' : 'Catálogo local ativo';
       $('#syncDetail').textContent = `${state.items.length} itens disponíveis${last ? ` • última sincronização: ${last}` : ' • configure a API para carregar todas as subpastas'}`;
-      $('#catalogNoticeText').textContent = 'Sem a API Key, o app mostra o catálogo incluído no ZIP. Com a API, ele percorre as duas pastas e todas as subpastas.';
+      $('#catalogNoticeText').textContent = 'Sem a API Key, o app mostra o catálogo incluído no ZIP. Com a API, ele percorre as três bibliotecas e todas as subpastas.';
       $('#catalogNotice').classList.remove('hidden');
     }
   } catch (err) {
@@ -410,6 +411,7 @@ async function loadLibrary() {
     for (const meta of state.offlineMeta.values()) if (!state.items.some(x => x.id === meta.id)) state.items.push({ ...meta });
     state.items = uniqueItems(state.items);
     $('#refreshBtn').disabled = false;
+    resetRenderLimit();
     render();
   }
 }
@@ -455,6 +457,26 @@ function renderContinueRail() {
     return `<article class="continue-card" data-id="${escapeHtml(item.id)}"><div class="continue-thumb">${thumb ? `<img src="${thumb}" alt="" loading="lazy" onerror="this.remove()">` : escapeHtml(shortCover(item.name).slice(0,18))}</div><div class="continue-info"><strong>${escapeHtml(item.name)}</strong><small>${Math.round(pct)}% • pág. ${(progress[item.id]?.page || 0) + 1}</small><button data-continue="${escapeHtml(item.id)}">Continuar</button></div></article>`;
   }).join('');
 }
+function sourceKeyFor(item) {
+  if (!item) return 'other';
+  if (item.localFile || item.offline || item.offlineOriginId) return 'offline';
+  const path = String(item.folderPath || '');
+  const match = path.match(/^Biblioteca\s+(\d+)(?:\/|$)/i);
+  return match ? `library-${match[1]}` : 'other';
+}
+function sourceLabelFor(item) {
+  const key = sourceKeyFor(item);
+  if (key === 'offline') return 'Offline/local';
+  const match = key.match(/^library-(\d+)$/);
+  return match ? `Biblioteca ${match[1]}` : 'Catálogo local';
+}
+function libraryCounts() {
+  const counts = { offline:0, other:0 };
+  for (let i = 0; i < (CONFIG.folderIds || []).length; i++) counts[`library-${i+1}`] = 0;
+  for (const item of state.items) counts[sourceKeyFor(item)] = (counts[sourceKeyFor(item)] || 0) + 1;
+  return counts;
+}
+
 function itemCard(item) {
   const type = extType(item), pct = percentFor(item), thumb = thumbUrl(item);
   const status = pct >= 100 ? 'concluído' : pct ? `${Math.round(pct)}% lido` : 'não iniciado';
@@ -469,20 +491,28 @@ function itemCard(item) {
     </div>
     <div class="card-body">
       <div class="title">${escapeHtml(item.name)}</div>
-      <div class="meta"><span>${bytes(item.size)}</span><span>${status}</span></div>${item.folderPath ? `<div class="source-path" title="${escapeHtml(item.folderPath)}">${escapeHtml(cleanFolderLabel(item.folderPath) || item.folderPath)}</div>` : ''}
+      <div class="meta"><span>${bytes(item.size)}</span><span>${status}</span></div><div class="source-line"><span class="source-chip source-${escapeHtml(sourceKeyFor(item))}">${escapeHtml(sourceLabelFor(item))}</span>${item.folderPath ? `<span class="source-path" title="${escapeHtml(item.folderPath)}">${escapeHtml(cleanFolderLabel(item.folderPath) || item.folderPath)}</span>` : ''}</div>
       <div class="progress"><i style="width:${pct}%"></i></div>
       <div class="card-actions"><button data-action="read">${pct >= 100 ? 'Ler novamente' : pct ? 'Continuar' : 'Ler agora'}</button><button class="secondary offline-action ${offline ? 'on' : ''}" data-action="offline" title="${offline ? 'Remover do offline' : 'Salvar para ler offline'}">${offlineBusy ? '…' : offline ? '✓' : '☁'}</button><button class="secondary download-action" data-action="download" title="Baixar arquivo">⇩</button>${item.localFile ? '' : '<button class="secondary" data-action="drive" title="Abrir no Drive">↗</button>'}</div>
     </div>
   </article>`;
 }
+function isNewItem(item, days = 30) {
+  const ts = Date.parse(item?.modifiedTime || '');
+  if (!Number.isFinite(ts)) return false;
+  return Date.now() - ts <= days * 86400000 && Date.now() >= ts;
+}
+function resetRenderLimit() { state.renderLimit = 60; }
 function filtered() {
   const arr = state.items.filter(item => {
     const t = extType(item), p = progress[item.id];
     if (state.collection && seriesKeyFor(item) !== state.collection) return false;
+    if (state.source !== 'all' && sourceKeyFor(item) !== state.source) return false;
     if (state.filter === 'favorites' && !favorites.has(item.id)) return false;
     if (state.filter === 'reading' && !(p && p.percent > 0 && p.percent < 100)) return false;
     if (state.filter === 'completed' && !(p && p.percent >= 100)) return false;
     if (state.filter === 'offline' && !state.offlineIds.has(item.offlineOriginId || item.id)) return false;
+    if (state.filter === 'new' && !isNewItem(item)) return false;
     if (state.filter === 'pdf' && t !== 'pdf') return false;
     if (state.filter === 'comic' && t !== 'comic') return false;
     if (state.search && !normalizeText(`${item.name} ${item.folderPath || ''}`).includes(state.search)) return false;
@@ -528,7 +558,14 @@ function render() {
   if (state.filter === 'collections' && !state.collection) return renderCollections();
   const arr = filtered();
   $('#emptyState').classList.toggle('hidden', arr.length > 0);
-  $('#libraryGrid').innerHTML = arr.map(itemCard).join('');
+  const visible = arr.slice(0, state.renderLimit);
+  $('#libraryGrid').innerHTML = visible.map(itemCard).join('');
+  const more = $('#loadMoreBtn');
+  if (more) {
+    const left = Math.max(0, arr.length - visible.length);
+    more.classList.toggle('hidden', left <= 0);
+    more.textContent = left > 0 ? `Carregar mais (${left} restantes)` : 'Carregar mais';
+  }
 }
 
 function setReaderButtons(type) {
@@ -552,7 +589,7 @@ function updateOfflineCurrentButton() {
 
 function updateCompleteButton() {
   const done = Boolean(state.current && (progress[state.current.id]?.percent || 0) >= 100);
-  $('#completeBtn').textContent = done ? '✓ Lido' : '✓ Marcar lido';
+  $('#completeBtn').textContent = done ? '↶ Marcar não lido' : '✓ Marcar lido';
   $('#completeBtn').classList.toggle('is-complete', done);
 }
 
@@ -1025,6 +1062,8 @@ function getNextIssue() {
 function updatePageControls() {
   if (!state.pages.length) return;
   $('#pageRange').value = state.page + 1;
+  const pageNumberInput = $('#pageNumberInput');
+  if (pageNumberInput) { pageNumberInput.max = state.pages.length; pageNumberInput.value = state.page + 1; }
   const end = effectiveMode() === 'spread' ? Math.min(state.pages.length, state.page + 2) : state.page + 1;
   $('#pageLabel').textContent = effectiveMode() === 'spread' && end > state.page + 1 ? `${state.page + 1}–${end} / ${state.pages.length}` : `${state.page + 1} / ${state.pages.length}`;
   const next = getNextIssue();
@@ -1060,6 +1099,7 @@ async function cleanupReaderData() {
   state.archive = null; state.pages = []; $('#readerBody')?.classList.remove('page-mode');
 }
 async function closeReader() {
+  closeReaderControls();
   if (isVerticalMode()) updateVerticalPosition();
   state.openToken++;
   await cleanupReaderData();
@@ -1069,9 +1109,16 @@ async function closeReader() {
 
 function markComplete() {
   if (!state.current) return;
-  const page = state.pages.length ? state.pages.length - 1 : 0;
-  progress[state.current.id] = { percent: 100, page, mode: state.mode, direction: state.direction, updated: Date.now() };
-  saveProgress(); updateLibraryStats(); updateCompleteButton(); toast('Marcado como lido.');
+  const done = (progress[state.current.id]?.percent || 0) >= 100;
+  if (done) {
+    progress[state.current.id] = { percent: 0, page: 0, mode: state.mode, direction: state.direction, updated: Date.now() };
+    toast('Marcado como não lido.');
+  } else {
+    const page = state.pages.length ? state.pages.length - 1 : 0;
+    progress[state.current.id] = { percent: 100, page, mode: state.mode, direction: state.direction, updated: Date.now() };
+    toast('Marcado como lido.');
+  }
+  saveProgress(); updateLibraryStats(); updateCompleteButton(); render();
 }
 
 function openSettings() {
@@ -1079,6 +1126,7 @@ function openSettings() {
   $('#defaultModeSelect').value = normalizedMode(prefs.defaultMode);
   $('#directionSelect').value = prefs.direction || 'ltr';
   if ($('#performanceSelect')) $('#performanceSelect').value = prefs.performance || 'auto';
+  if ($('#autoScrollSpeedSelect')) $('#autoScrollSpeedSelect').value = String(prefs.autoScrollSpeed || 46);
   if ($('#performanceHint')) $('#performanceHint').textContent = `Ativo: ${performanceLabel()} • ${navigator.deviceMemory ? navigator.deviceMemory + ' GB RAM' : 'RAM não informada'}${navigator.hardwareConcurrency ? ' • ' + navigator.hardwareConcurrency + ' núcleos' : ''}`;
   $('#configStatus').textContent = getApiKey() ? 'Chave configurada neste navegador.' : 'Nenhuma chave configurada.';
   $('#settingsModal').classList.remove('hidden');
@@ -1111,17 +1159,22 @@ document.addEventListener('click', e => {
     if (action === 'read') { openItem(item); return; }
   }
   const nav = e.target.closest('.nav');
-  if (nav) { $$('.nav').forEach(n => n.classList.remove('active')); nav.classList.add('active'); state.collection = ''; state.filter = nav.dataset.filter; render(); }
+  if (nav) { $$('.nav').forEach(n => n.classList.remove('active')); nav.classList.add('active'); state.collection = ''; state.filter = nav.dataset.filter; resetRenderLimit(); render(); }
 });
 
-$('#searchInput').addEventListener('input', e => { state.search = normalizeText(e.target.value.trim()); render(); });
-$('#sortSelect').addEventListener('change', e => { state.sort = e.target.value; render(); });
+$('#searchInput').addEventListener('input', e => { state.search = normalizeText(e.target.value.trim()); resetRenderLimit(); render(); });
+$('#sortSelect').addEventListener('change', e => { state.sort = e.target.value; resetRenderLimit(); render(); });
 $('#showReadingBtn').addEventListener('click', () => { state.collection = ''; state.filter = 'reading'; $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.filter === 'reading')); render(); });
 $('#backCollectionsBtn').addEventListener('click', () => { state.collection = ''; state.filter = 'collections'; $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.filter === 'collections')); render(); });
+$('#sourceSelect')?.addEventListener('change', e => { state.source = e.target.value || 'all'; resetRenderLimit(); render(); });
 $('#refreshBtn').addEventListener('click', loadLibrary);
 function openDriveModal() {
   const urls = Array.isArray(CONFIG.folderUrls) && CONFIG.folderUrls.length ? CONFIG.folderUrls : [CONFIG.folderUrl].filter(Boolean);
-  $('#driveRoots').innerHTML = urls.map((url, i) => `<button class="drive-root" data-drive-url="${escapeHtml(url)}"><span>Biblioteca ${i + 1}</span><small>Google Drive próprio • sincronizado no app</small><b>↗</b></button>`).join('');
+  const counts = libraryCounts();
+  const sync = readJson(LS.syncMeta, {});
+  const last = formatDateTime(sync.at);
+  $('#driveSummary').innerHTML = `<div><strong>${getApiKey() ? 'Drive API configurada' : 'Drive API não configurada'}</strong><small>${getApiKey() ? `${state.items.length} itens disponíveis${last ? ` • última sincronização ${last}` : ''}` : 'O catálogo local funciona, mas a API é recomendada para ler e sincronizar tudo.'}</small></div>`;
+  $('#driveRoots').innerHTML = urls.map((url, i) => { const key=`library-${i+1}`; const count=counts[key]||0; return `<button class="drive-root" data-drive-url="${escapeHtml(url)}"><span>Biblioteca ${i + 1}<em>${count ? `${count} itens carregados` : 'Abrir pasta no Drive'}</em></span><small>Google Drive próprio • ${getApiKey() ? 'API pronta' : 'configure a API para sincronização completa'}</small><b>↗</b></button>`; }).join('');
   const external = Array.isArray(CONFIG.externalSources) ? CONFIG.externalSources : [];
   $('#externalSources').innerHTML = external.length ? `<div class="source-section-title">Fontes externas</div>${external.map(src => `<article class="external-source-card"><div class="external-source-head"><div><span class="external-badge">EXTERNO</span><strong>${escapeHtml(src.name || 'Fonte externa')}</strong></div></div><p>${escapeHtml(src.note || 'Conteúdo hospedado em uma fonte externa.')}</p><div class="external-source-actions">${src.siteUrl ? `<button class="secondary-btn" data-external-url="${escapeHtml(src.siteUrl)}">Abrir site</button>` : ''}${src.driveUrl ? `<button data-external-url="${escapeHtml(src.driveUrl)}">Abrir acervo ↗</button>` : ''}</div></article>`).join('')}` : '';
   $('#driveModal').classList.remove('hidden');
@@ -1132,6 +1185,36 @@ $('#closeDriveModal').addEventListener('click', closeDriveModal);
 $('#driveModal').addEventListener('click', e => { if (e.target === $('#driveModal')) closeDriveModal(); });
 $('#driveRoots').addEventListener('click', e => { const b=e.target.closest('[data-drive-url]'); if (b) safeOpen(b.dataset.driveUrl); });
 $('#externalSources').addEventListener('click', e => { const b=e.target.closest('[data-external-url]'); if (b) safeOpen(b.dataset.externalUrl); });
+async function testDriveConnection() {
+  const key = ($('#apiKeyInput')?.value || getApiKey()).trim();
+  const out = $('#driveHealthText');
+  if (!key) { out.textContent = 'Cole uma API Key para testar. O catálogo local continua funcionando sem ela.'; out.className = 'warn'; return false; }
+  out.textContent = `Testando ${(CONFIG.folderIds || []).length} bibliotecas…`; out.className = '';
+  const roots = Array.isArray(CONFIG.folderIds) && CONFIG.folderIds.length ? CONFIG.folderIds : [CONFIG.folderId].filter(Boolean);
+  try {
+    const results = [];
+    for (const id of roots) {
+      const u = new URL('https://www.googleapis.com/drive/v3/files');
+      u.searchParams.set('q', `'${id}' in parents and trashed = false`);
+      u.searchParams.set('fields', 'files(id,name,mimeType),nextPageToken');
+      u.searchParams.set('pageSize', '1');
+      u.searchParams.set('supportsAllDrives', 'true');
+      u.searchParams.set('includeItemsFromAllDrives', 'true');
+      u.searchParams.set('key', key);
+      const r = await fetch(u, { mode:'cors' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error?.message || `HTTP ${r.status}`);
+      results.push((d.files || []).length);
+    }
+    out.textContent = `Conexão OK • ${roots.length} bibliotecas acessíveis. Agora salve e sincronize.`; out.className = 'ok';
+    return true;
+  } catch (err) {
+    out.textContent = `Falha: ${err.message}`; out.className = 'warn';
+    return false;
+  }
+}
+$('#testDriveBtn')?.addEventListener('click', testDriveConnection);
+
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#noticeSettingsBtn').addEventListener('click', openSettings);
 $('#closeSettings').addEventListener('click', closeSettings);
@@ -1141,6 +1224,7 @@ $('#saveKeyBtn').addEventListener('click', async () => {
   prefs.defaultMode = normalizedMode($('#defaultModeSelect').value);
   prefs.direction = $('#directionSelect').value === 'rtl' ? 'rtl' : 'ltr';
   prefs.performance = ['auto','eco','quality'].includes($('#performanceSelect')?.value) ? $('#performanceSelect').value : 'auto';
+  prefs.autoScrollSpeed = Number($('#autoScrollSpeedSelect')?.value || 46);
   savePrefs();
   if (key) storageSet(LS.apiKey, key); else storageRemove(LS.apiKey);
   $('#configStatus').textContent = key ? 'Chave salva. Sincronizando…' : 'Chave removida.';
@@ -1152,6 +1236,20 @@ $('#clearKeyBtn').addEventListener('click', async () => {
 
 $('#localBtn').addEventListener('click', () => $('#localFileInput').click());
 $('#localFileInput').addEventListener('change', async e => { const file = e.target.files?.[0]; e.target.value = ''; await openLocalSelected(file); });
+
+function closeReaderControls() {
+  $('#reader').classList.remove('controls-open');
+  $('#readerMenuBtn')?.setAttribute('aria-expanded','false');
+}
+let readerControlsTimer = 0;
+function toggleReaderControls() {
+  const open = $('#reader').classList.toggle('controls-open');
+  $('#readerMenuBtn')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  clearTimeout(readerControlsTimer);
+  if (open && matchMedia('(max-width:850px)').matches) readerControlsTimer = setTimeout(closeReaderControls, 6000);
+}
+$('#readerMenuBtn')?.addEventListener('click', toggleReaderControls);
+
 $('#closeReader').addEventListener('click', closeReader);
 $('#downloadCurrentBtn').addEventListener('click', () => downloadItem(state.current));
 $('#offlineCurrentBtn').addEventListener('click', async () => { if (state.current) { await toggleOfflineItem(state.current); updateOfflineCurrentButton(); } });
@@ -1161,7 +1259,11 @@ $('#prevPage').addEventListener('click', () => setPage(state.page - pageStep()))
 $('#nextPage').addEventListener('click', () => setPage(state.page + pageStep()));
 $('#nextIssueBtn').addEventListener('click', async () => { const next = getNextIssue(); if (next) await openItem(next); });
 $('#pageRange').addEventListener('input', e => setPage(Number(e.target.value) - 1));
+$('#pageNumberInput')?.addEventListener('change', e => { const n = Number(e.target.value || 1); setPage(n - 1); });
+$('#pageNumberInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); const n = Number(e.target.value || 1); setPage(n - 1); } });
+$('#loadMoreBtn')?.addEventListener('click', () => { state.renderLimit += 60; render(); });
 $('#modeBtn').addEventListener('click', async () => {
+  if (window.matchMedia('(max-width:850px)').matches) closeReaderControls();
   if (!state.pages.length) return;
   stopAutoScroll();
   const modes = ['page','spread','vertical','webtoon'];
@@ -1175,6 +1277,7 @@ $('#fitBtn').addEventListener('click', async () => {
   await renderReaderPages();
 });
 $('#directionBtn').addEventListener('click', () => {
+  if (window.matchMedia('(max-width:850px)').matches) closeReaderControls();
   state.direction = state.direction === 'rtl' ? 'ltr' : 'rtl';
   prefs.direction = state.direction; savePrefs(); updateReaderPrefsUI(); updateProgress();
   toast(state.direction === 'rtl' ? 'Modo mangá: avance tocando à esquerda.' : 'Leitura ocidental: avance tocando à direita.');
@@ -1186,7 +1289,7 @@ async function setZoom(value) {
 $('#zoomOutBtn').addEventListener('click', () => setZoom(state.zoom - .2));
 $('#zoomInBtn').addEventListener('click', () => setZoom(state.zoom + .2));
 $('#zoomLabel').addEventListener('click', () => setZoom(1));
-$('#fullscreenBtn').addEventListener('click', () => document.fullscreenElement ? document.exitFullscreen() : $('#reader').requestFullscreen?.());
+$('#fullscreenBtn').addEventListener('click', () => { closeReaderControls(); document.fullscreenElement ? document.exitFullscreen() : $('#reader').requestFullscreen?.(); });
 function stopAutoScroll() {
   if (state.autoScrollId) cancelAnimationFrame(state.autoScrollId);
   state.autoScrollId = 0; state.autoScrollLast = 0; updateReaderPrefsUI();
@@ -1234,13 +1337,20 @@ document.addEventListener('keydown', e => {
   if (isPagedMode() && (e.key === '+' || e.key === '=')) setZoom(state.zoom + .2);
   if (isPagedMode() && e.key === '-') setZoom(state.zoom - .2);
   if (isPagedMode() && e.key === '0') setZoom(1);
+  if (e.key.toLowerCase() === 'f') document.fullscreenElement ? document.exitFullscreen() : $('#reader').requestFullscreen?.();
+  if (e.key.toLowerCase() === 'm') $('#modeBtn').click();
+  if (e.key.toLowerCase() === 'd') $('#directionBtn').click();
+  if (e.key === '?') toast('Atalhos: ←/→ páginas • +/- zoom • 0 reset • F tela cheia • M modo • D direção • Esc sair');
 });
 
 $('#readerBody').addEventListener('click', e => {
-  if (!isPagedMode() || !state.pages.length || e.target.closest('button,a')) return;
+  if (!isPagedMode() || !state.pages.length || e.target.closest('button,a') || (Date.now() - Number(state.lastSwipeAt || 0) < 450)) return;
   const rect = $('#readerBody').getBoundingClientRect();
   const ratio = (e.clientX - rect.left) / Math.max(1, rect.width);
-  if (ratio > .30 && ratio < .70) return;
+  if (ratio > .30 && ratio < .70) {
+    if (matchMedia('(max-width:850px)').matches) toggleReaderControls();
+    return;
+  }
   const leftZone = ratio <= .30;
   const next = state.direction === 'rtl' ? leftZone : !leftZone;
   setPage(state.page + (next ? pageStep() : -pageStep()));
@@ -1258,11 +1368,12 @@ $('#readerBody').addEventListener('touchend', e => {
   if (Date.now() - start.time > 700 || Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
   const swipeLeft = dx < 0;
   const next = state.direction === 'rtl' ? !swipeLeft : swipeLeft;
+  state.lastSwipeAt = Date.now();
   setPage(state.page + (next ? pageStep() : -pageStep()));
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '1.2.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '1.7.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
