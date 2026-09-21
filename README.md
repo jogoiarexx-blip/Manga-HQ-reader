@@ -1,5 +1,35 @@
 # Manga HQ Reader — GitHub Pages v2.1.0
 
+
+## HQs em páginas WebP no Google Drive
+
+A partir da versão **2.2.0**, o formato recomendado para leitura direta pelo Drive é uma pasta por edição, com as páginas como imagens separadas. O leitor não precisa baixar um CBR/CBZ inteiro antes de começar.
+
+Estrutura suportada:
+
+```text
+Nome da Série/
+├── series.json
+├── 01 - Nome da Série #1/
+│   ├── manifest.json
+│   ├── 001.webp
+│   ├── 002.webp
+│   └── ...
+├── 02 - Nome da Série #2/
+│   ├── manifest.json
+│   ├── 001.webp
+│   └── ...
+└── ...
+```
+
+- `series.json` define o título da coleção e pode listar as edições.
+- `manifest.json` define título, número da edição, capa, quantidade e ordem das páginas.
+- Sem manifesto, pastas com imagens majoritariamente numeradas (`001.webp`, `002.webp`...) também são detectadas automaticamente.
+- A primeira página, ou a página indicada em `cover`, vira a capa do catálogo.
+- O leitor busca cada imagem pela Google Drive API somente quando ela é necessária.
+- PDF, CBR, CBZ, RAR e ZIP continuam suportados.
+
+
 ## Destaques da v2.1.0
 
 - sincronização independente das 4 bibliotecas do Google Drive, com progresso, cancelamento e fallback por biblioteca;
