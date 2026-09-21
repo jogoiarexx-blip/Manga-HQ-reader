@@ -1,3 +1,9 @@
+## 2.2.5 — Correção do forEach
+
+- Corrige o erro `$(...).forEach is not a function` no leitor.
+- Usa o seletor múltiplo `$$()` para percorrer todas as imagens renderizadas.
+- Renova o cache PWA e força carregamento do JavaScript corrigido.
+
 ## 2.2.4 — Cache forçado e catálogo corrigido
 
 - Prioriza o catálogo publicado sobre dados antigos salvos no navegador.
