@@ -2,7 +2,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '2.1.0',
+  appVersion: '2.2.0',
   folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', '1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy'],
   folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', 'https://drive.google.com/drive/folders/1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
@@ -308,6 +308,7 @@ function bytes(n) {
   return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 function extType(item) {
+  if (item?.readerType === 'drive-pages' || item?.mimeType === 'application/x-mhqr-pages') return 'pages';
   const n = (item.name || '').toLowerCase();
   if (n.endsWith('.pdf')) return 'pdf';
   if (/\.(cbr|cbz|rar|zip)$/.test(n)) return 'comic';
@@ -341,9 +342,13 @@ function uniqueItems(items) {
 }
 function thumbUrl(item) {
   if (item.localFile && !item.thumbnailLink) return '';
+  if (extType(item) === 'pages' && item.coverPageId) return item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.coverPageId)}&sz=w420`;
   return item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w420`;
 }
-function driveViewUrl(item) { const u = new URL(`https://drive.google.com/file/d/${encodeURIComponent(item.id)}/view`); if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey); return u.href; }
+function driveViewUrl(item) {
+  if (extType(item) === 'pages' && item.driveFolderId) return `https://drive.google.com/drive/folders/${encodeURIComponent(item.driveFolderId)}`;
+  const u = new URL(`https://drive.google.com/file/d/${encodeURIComponent(item.id)}/view`); if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey); return u.href;
+}
 function drivePreviewUrl(item) { return `https://drive.google.com/file/d/${encodeURIComponent(item.id)}/preview`; }
 function safeOpen(url) {
   try {
@@ -366,6 +371,11 @@ function directDownloadUrl(item) {
 }
 async function downloadItem(item) {
   if (!item) return;
+  if (extType(item) === 'pages') {
+    safeOpen(driveViewUrl(item));
+    toast('Esta HQ usa páginas WebP separadas. A pasta foi aberta no Google Drive.');
+    return;
+  }
   if (item.localFile) {
     const url = URL.createObjectURL(item.localFile);
     const a = document.createElement('a');
@@ -404,28 +414,120 @@ function saveCatalogCache(items) {
   storageSet(LS.catalog, JSON.stringify(clean));
 }
 
-async function listDriveRoot(apiKey, rootId, index, signal, onProgress) {
+async function listDriveChildren(apiKey, folderId, signal) {
   const fields = 'nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink,resourceKey)';
-  const queue = [{ id: rootId, path: `Biblioteca ${index + 1}` }];
+  const files = []; let pageToken = '';
+  do {
+    const u = new URL('https://www.googleapis.com/drive/v3/files');
+    u.searchParams.set('q', `'${folderId}' in parents and trashed = false`);
+    u.searchParams.set('fields', fields);
+    u.searchParams.set('pageSize', '1000');
+    u.searchParams.set('orderBy', 'name_natural');
+    u.searchParams.set('supportsAllDrives', 'true');
+    u.searchParams.set('includeItemsFromAllDrives', 'true');
+    u.searchParams.set('key', apiKey);
+    if (pageToken) u.searchParams.set('pageToken', pageToken);
+    const r = await fetch(u, { mode:'cors', signal });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error?.message || `Drive API: HTTP ${r.status}`);
+    files.push(...(d.files || []));
+    pageToken = d.nextPageToken || '';
+  } while (pageToken);
+  return files;
+}
+async function fetchDriveJsonFile(apiKey, file, signal) {
+  if (!file?.id) return null;
+  const u = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`);
+  u.searchParams.set('alt', 'media'); u.searchParams.set('key', apiKey);
+  const headers = file.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${file.id}/${file.resourceKey}` } : {};
+  const r = await fetch(u, { mode:'cors', headers, signal });
+  if (!r.ok) throw new Error(`JSON do Drive: HTTP ${r.status}`);
+  return r.json();
+}
+function orderedDriveImages(images, manifest = null) {
+  const sorted = [...images].sort((a,b) => naturalSort(a.name || '', b.name || ''));
+  if (!Array.isArray(manifest?.pages) || !manifest.pages.length) return sorted;
+  const byName = new Map(sorted.map(file => [String(file.name || ''), file]));
+  const ordered = manifest.pages.map(name => byName.get(String(name))).filter(Boolean);
+  const used = new Set(ordered.map(file => file.id));
+  return [...ordered, ...sorted.filter(file => !used.has(file.id))];
+}
+function isLikelyDrivePageFolder(images, manifest = null) {
+  if (manifest?.format === 'webp-pages' || Array.isArray(manifest?.pages)) return images.length > 0;
+  if (images.length < 2) return false;
+  const numbered = images.filter(file => /^\d{1,5}\.(?:avif|webp|png|jpe?g|jfif|gif|bmp)$/i.test(file.name || '')).length;
+  return numbered >= Math.max(2, Math.ceil(images.length * .6));
+}
+function newestDriveModified(files) {
+  return files.reduce((latest, file) => String(file.modifiedTime || '') > latest ? String(file.modifiedTime || '') : latest, '');
+}
+async function listDriveRoot(apiKey, rootId, index, signal, onProgress) {
+  const libraryPath = `Biblioteca ${index + 1}`;
+  const queue = [{ id: rootId, path: libraryPath, parentPath:'', name:'', libraryPath, seriesTitle:'' }];
   const seenFolders = new Set(); const items = []; let foldersDone = 0;
   while (queue.length) {
     if (signal?.aborted) throw new DOMException('Sincronização cancelada.', 'AbortError');
     const folder = queue.shift(); if (!folder?.id || seenFolders.has(folder.id)) continue;
-    seenFolders.add(folder.id); let pageToken = '';
-    do {
-      const u = new URL('https://www.googleapis.com/drive/v3/files');
-      u.searchParams.set('q', `'${folder.id}' in parents and trashed = false`);
-      u.searchParams.set('fields', fields); u.searchParams.set('pageSize', '1000'); u.searchParams.set('orderBy', 'name_natural');
-      u.searchParams.set('supportsAllDrives', 'true'); u.searchParams.set('includeItemsFromAllDrives', 'true'); u.searchParams.set('key', apiKey);
-      if (pageToken) u.searchParams.set('pageToken', pageToken);
-      const r = await fetch(u, { mode:'cors', signal }); const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error?.message || `Drive API: HTTP ${r.status}`);
-      for (const file of (d.files || [])) {
-        if (file.mimeType === 'application/vnd.google-apps.folder') queue.push({ id:file.id, path:`${folder.path}/${file.name}` });
-        else if (/\.(pdf|cbr|cbz|rar|zip)$/i.test(file.name || '')) items.push({ ...file, folderPath:folder.path });
-      }
-      pageToken = d.nextPageToken || '';
-    } while (pageToken);
+    seenFolders.add(folder.id);
+    const files = await listDriveChildren(apiKey, folder.id, signal);
+    const childFolders = files.filter(file => file.mimeType === 'application/vnd.google-apps.folder');
+    const regularFiles = files.filter(file => file.mimeType !== 'application/vnd.google-apps.folder');
+    for (const file of regularFiles) {
+      if (/\.(pdf|cbr|cbz|rar|zip)$/i.test(file.name || '')) items.push({ ...file, folderPath:folder.path });
+    }
+
+    const imageFiles = regularFiles.filter(file => isImage(file.name || ''));
+    const manifestFile = regularFiles.find(file => /^manifest\.json$/i.test(file.name || ''));
+    const seriesFile = regularFiles.find(file => /^series\.json$/i.test(file.name || ''));
+    let manifest = null, series = null;
+    if (manifestFile) {
+      try { manifest = await fetchDriveJsonFile(apiKey, manifestFile, signal); }
+      catch (err) { console.warn('manifest.json ignorado:', folder.path, err); }
+    }
+    if (seriesFile) {
+      try { series = await fetchDriveJsonFile(apiKey, seriesFile, signal); }
+      catch (err) { console.warn('series.json ignorado:', folder.path, err); }
+    }
+
+    if (folder.name && isLikelyDrivePageFolder(imageFiles, manifest)) {
+      const ordered = orderedDriveImages(imageFiles, manifest);
+      const coverName = String(manifest?.cover || '');
+      const cover = ordered.find(file => file.name === coverName) || ordered[0];
+      const title = String(manifest?.title || folder.name).replace(/^\d+\s*[-–—]\s*/, '').trim() || folder.name;
+      const seriesTitle = folder.seriesTitle || '';
+      items.push({
+        id: `drive-pages:${folder.id}`,
+        driveFolderId: folder.id,
+        readerType: 'drive-pages',
+        mimeType: 'application/x-mhqr-pages',
+        name: title,
+        folderPath: seriesTitle ? `${folder.libraryPath}/${seriesTitle}` : (folder.parentPath || folder.path),
+        seriesTitle,
+        issueNumber: manifest?.issue ?? folder.issueNumber ?? null,
+        pageCount: ordered.length,
+        coverPageId: cover?.id || '',
+        coverResourceKey: cover?.resourceKey || '',
+        thumbnailLink: cover?.id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(cover.id)}&sz=w420` : '',
+        size: ordered.reduce((sum, file) => sum + Number(file.size || 0), 0),
+        modifiedTime: newestDriveModified(ordered),
+        resourceKey: folder.resourceKey || ''
+      });
+    }
+
+    const issueByFolder = new Map((Array.isArray(series?.issues) ? series.issues : []).map(issue => [String(issue.folder || ''), issue]));
+    for (const child of childFolders) {
+      const issue = issueByFolder.get(String(child.name || '')) || null;
+      queue.push({
+        id: child.id,
+        name: child.name,
+        path: `${folder.path}/${child.name}`,
+        parentPath: folder.path,
+        libraryPath: folder.libraryPath || libraryPath,
+        seriesTitle: String(series?.title || folder.seriesTitle || ''),
+        issueNumber: issue?.issue ?? null,
+        resourceKey: child.resourceKey || ''
+      });
+    }
     foldersDone++; onProgress?.({ index, foldersDone, queued:queue.length, items:items.length, state:'running' });
   }
   return uniqueItems(items);
@@ -572,12 +674,13 @@ function seriesLabel(name, folderPath = '') {
     .trim();
   return s || shortCover(name) || 'Sem coleção';
 }
-function seriesKeyFor(item) { return normalizeText(seriesLabel(item?.name, item?.folderPath)); }
+function seriesKeyFor(item) { return normalizeText(item?.seriesTitle || seriesLabel(item?.name, item?.folderPath)); }
 function collectionGroups(items = state.items) {
   const map = new Map();
   for (const item of items) {
     const key = seriesKeyFor(item);
-    if (!map.has(key)) map.set(key, { key, label: seriesLabel(item.name, item.folderPath), items: [] });
+    const label = item?.seriesTitle || seriesLabel(item.name, item.folderPath);
+    if (!map.has(key)) map.set(key, { key, label, items: [] });
     map.get(key).items.push(item);
   }
   return [...map.values()].sort((a, b) => b.items.length - a.items.length || naturalSort(a.label, b.label));
@@ -625,20 +728,23 @@ function libraryCounts() {
 function itemCard(item) {
   const type = extType(item), pct = percentFor(item), thumb = thumbUrl(item);
   const status = pct >= 100 ? 'concluído' : pct ? `${Math.round(pct)}% lido` : 'não iniciado';
-  const offline = state.offlineIds.has(item.offlineOriginId || item.id);
-  const offlineBusy = state.offlineBusy.has(item.offlineOriginId || item.id);
+  const pageFolder = type === 'pages';
+  const offline = !pageFolder && state.offlineIds.has(item.offlineOriginId || item.id);
+  const offlineBusy = !pageFolder && state.offlineBusy.has(item.offlineOriginId || item.id);
+  const badge = type === 'pdf' ? 'PDF' : type === 'comic' ? 'CBR/CBZ' : pageFolder ? 'WEBP' : 'ARQ';
+  const sizeMeta = pageFolder && item.pageCount ? `${item.pageCount} páginas` : bytes(item.size);
   return `<article class="card ${offline ? 'is-offline' : ''}" data-id="${escapeHtml(item.id)}">
     <div class="cover">
       ${thumb ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" onerror="this.remove()">` : ''}
-      <span class="badge">${type === 'pdf' ? 'PDF' : type === 'comic' ? 'CBR/CBZ' : 'ARQ'}</span>${offline ? '<span class="offline-badge">OFFLINE</span>' : ''}
+      <span class="badge">${badge}</span>${offline ? '<span class="offline-badge">OFFLINE</span>' : ''}
       <button class="fav ${favorites.has(item.id) ? 'on' : ''}" data-action="fav" title="Favoritar">★</button>
       <div class="cover-word">${escapeHtml(shortCover(item.name))}</div>
     </div>
     <div class="card-body">
       <div class="title">${escapeHtml(item.name)}</div>
-      <div class="meta"><span>${bytes(item.size)}</span><span>${status}</span></div><div class="source-line"><span class="source-chip source-${escapeHtml(sourceKeyFor(item))}">${escapeHtml(sourceLabelFor(item))}</span>${item.folderPath ? `<span class="source-path" title="${escapeHtml(item.folderPath)}">${escapeHtml(cleanFolderLabel(item.folderPath) || item.folderPath)}</span>` : ''}</div>
+      <div class="meta"><span>${escapeHtml(sizeMeta)}</span><span>${status}</span></div><div class="source-line"><span class="source-chip source-${escapeHtml(sourceKeyFor(item))}">${escapeHtml(sourceLabelFor(item))}</span>${item.folderPath ? `<span class="source-path" title="${escapeHtml(item.folderPath)}">${escapeHtml(cleanFolderLabel(item.folderPath) || item.folderPath)}</span>` : ''}</div>
       <div class="progress"><i style="width:${pct}%"></i></div>
-      <div class="card-actions"><button data-action="read">${pct >= 100 ? 'Ler novamente' : pct ? 'Continuar' : 'Ler agora'}</button><button class="secondary offline-action ${offline ? 'on' : ''}" data-action="offline" title="${offline ? 'Remover do offline' : 'Salvar para ler offline'}">${offlineBusy ? '…' : offline ? '✓' : '☁'}</button><button class="secondary download-action" data-action="download" title="Baixar arquivo">⇩</button>${item.localFile ? '' : '<button class="secondary" data-action="drive" title="Abrir no Drive">↗</button>'}</div>
+      <div class="card-actions"><button data-action="read">${pct >= 100 ? 'Ler novamente' : pct ? 'Continuar' : 'Ler agora'}</button>${pageFolder ? '' : `<button class="secondary offline-action ${offline ? 'on' : ''}" data-action="offline" title="${offline ? 'Remover do offline' : 'Salvar para ler offline'}">${offlineBusy ? '…' : offline ? '✓' : '☁'}</button><button class="secondary download-action" data-action="download" title="Baixar arquivo">⇩</button>`}${item.localFile ? '' : '<button class="secondary" data-action="drive" title="Abrir no Drive">↗</button>'}</div>
     </div>
   </article>`;
 }
@@ -660,7 +766,7 @@ function filtered() {
     if (state.filter === 'offline' && !state.offlineIds.has(item.offlineOriginId || item.id)) return false;
     if (state.filter === 'new' && !isNewItem(item)) return false;
     if (state.filter === 'pdf' && t !== 'pdf') return false;
-    if (state.filter === 'comic' && t !== 'comic') return false;
+    if (state.filter === 'comic' && !['comic','pages'].includes(t)) return false;
     if (state.search && !normalizeText(`${item.name} ${item.folderPath || ''}`).includes(state.search)) return false;
     return true;
   });
@@ -727,11 +833,14 @@ function render() {
 }
 
 function setReaderButtons(type) {
-  const readable = type === 'comic' || type === 'pdf';
+  const readable = ['comic','pdf','pages'].includes(type);
+  const pageFolder = type === 'pages';
   $('#modeBtn').classList.toggle('hidden', !readable);
   $('#directionBtn').classList.toggle('hidden', !readable);
   $('#fitBtn').classList.toggle('hidden', !readable);
   $('#zoomControls').classList.toggle('hidden', !readable);
+  $('#offlineCurrentBtn')?.classList.toggle('hidden', pageFolder);
+  $('#downloadCurrentBtn')?.classList.toggle('hidden', pageFolder);
   $('#readerFooter').classList.add('hidden');
   updateCompleteButton();
 }
@@ -788,7 +897,7 @@ function updateReaderPrefsUI() {
   if ($('#fitBtn')) $('#fitBtn').textContent = `Ajuste: ${{contain:'Página',width:'Largura',height:'Altura'}[state.fit] || 'Página'}`;
   $('#trimBtn')?.classList.toggle('active', Boolean(state.trimMargins));
   updateBookmarkButton();
-  $('#zoomControls').classList.toggle('hidden', !isPagedMode() || !['comic','pdf'].includes(extType(state.current || {})));
+  $('#zoomControls').classList.toggle('hidden', !isPagedMode() || !['comic','pdf','pages'].includes(extType(state.current || {})));
   const auto = $('#autoScrollBtn');
   if (auto) {
     auto.classList.toggle('hidden', !isVerticalMode());
@@ -827,7 +936,8 @@ async function openItem(item, forceLarge = false) {
   updateReaderPrefsUI();
   if (type === 'pdf') return openPdf(item, token);
   if (type === 'comic') return openComic(item, token);
-  if (token === state.openToken) showReaderError('Formato não suportado', 'Este arquivo não é PDF, CBR, CBZ, RAR ou ZIP.');
+  if (type === 'pages') return openDrivePages(item, token);
+  if (token === state.openToken) showReaderError('Formato não suportado', 'Este item não é PDF, CBR, CBZ, RAR, ZIP ou uma pasta de páginas WebP.');
 }
 
 async function loadPdfJs() {
@@ -1048,6 +1158,45 @@ async function openComic(item, token) {
   }
 }
 
+async function loadDrivePageFolder(item, token) {
+  const key = getApiKey();
+  if (!key) throw new Error('Configure a Google Drive API Key para ler pastas de páginas WebP diretamente do Drive.');
+  const files = await listDriveChildren(key, item.driveFolderId, undefined);
+  if (token !== state.openToken) throw new DOMException('Leitura cancelada.', 'AbortError');
+  const images = files.filter(file => isImage(file.name || ''));
+  const manifestFile = files.find(file => /^manifest\.json$/i.test(file.name || ''));
+  let manifest = null;
+  if (manifestFile) {
+    try { manifest = await fetchDriveJsonFile(key, manifestFile); }
+    catch (err) { console.warn('Falha ao ler manifest.json:', err); }
+  }
+  const ordered = orderedDriveImages(images, manifest);
+  if (!ordered.length) throw new Error('Nenhuma página de imagem foi encontrada nesta pasta do Google Drive.');
+  return { manifest, files: ordered };
+}
+async function openDrivePages(item, token) {
+  $('#readerLoading').classList.remove('hidden');
+  $('#loadingText').textContent = 'Listando páginas WebP no Google Drive…';
+  $('#readerBody').innerHTML = ''; $('#readerFooter').classList.add('hidden');
+  try {
+    const bundle = await loadDrivePageFolder(item, token);
+    if (token !== state.openToken) return;
+    state.archive = { type:'drive-pages', entries:bundle.files, folderId:item.driveFolderId };
+    state.pages = bundle.files.map((file, index) => ({ ...file, index }));
+    state.page = Math.max(0, Math.min(state.page, state.pages.length - 1));
+    if (bundle.manifest?.title) $('#readerTitle').textContent = bundle.manifest.title;
+    $('#readerMeta').textContent = `${state.pages.length} páginas • WebP no Google Drive`;
+    $('#readerLoading').classList.add('hidden');
+    $('#pageRange').max = state.pages.length;
+    updateReaderPrefsUI();
+    await renderReaderPages();
+  } catch (err) {
+    if (token !== state.openToken || err?.name === 'AbortError') return;
+    $('#readerLoading').classList.add('hidden');
+    showReaderError('Não foi possível abrir esta HQ em WebP', err.message, false);
+  }
+}
+
 async function renderThumbDrawer() {
   const grid=$('#thumbGrid'); if (!grid || !state.pages.length) return;
   const token=++state.thumbRenderToken; const max=Math.min(state.pages.length, 120);
@@ -1145,7 +1294,19 @@ async function getPageUrl(index, expectedToken = state.renderToken) {
   if (!archive || !page) throw new Error('Página inexistente.');
   if (state.pageUrls.has(index)) { state.pageUse.set(index, Date.now()); return state.pageUrls.get(index); }
   const entry = archive.entries[index]; let blob;
-  if (archive.type === 'zip') {
+  if (archive.type === 'drive-pages') {
+    const key = getApiKey();
+    if (!key) throw new Error('Google Drive API Key não configurada.');
+    const u = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(entry.id)}`);
+    u.searchParams.set('alt', 'media'); u.searchParams.set('key', key);
+    const headers = entry.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${entry.id}/${entry.resourceKey}` } : {};
+    const r = await fetch(u, { mode:'cors', headers, cache:'force-cache' });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.error?.message || `Drive API: HTTP ${r.status}`);
+    }
+    blob = await r.blob();
+  } else if (archive.type === 'zip') {
     blob = await entry.async('blob');
   } else {
     const result = archive.engine.extract({ files: [entry.name] });
@@ -1693,7 +1854,7 @@ $('#readerBody').addEventListener('touchend', e => {
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.1.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.2.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
