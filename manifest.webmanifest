@@ -1,7 +1,7 @@
 {
   "name": "Manga HQ Reader",
   "short_name": "HQ Reader",
-  "description": "Leitor de mangás e HQs em PDF, CBR, CBZ e páginas WebP lidas diretamente de bibliotecas do Google Drive.",
+  "description": "Leitor local de mangás e HQs em PDF, CBR, CBZ, RAR e ZIP, sem acervo pré-carregado.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
