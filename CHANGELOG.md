@@ -1,3 +1,15 @@
+## 2.3.0 — Robustez do leitor e validação
+
+- Corrige e reforça a navegação em página dupla, mantendo a capa isolada e pares consistentes.
+- Trocar LTR/RTL agora redesenha imediatamente a página dupla.
+- Pré-carregamento de páginas WebP do Drive passa a iniciar de fato o carregamento da imagem seguinte/anterior.
+- Miniaturas de HQs WebP usam versões menores para reduzir tráfego e memória.
+- Limpeza do modo vertical deixa de tentar revogar URLs HTTP como se fossem Blob URLs.
+- Teclas de navegação em modo paginado não provocam rolagem paralela do navegador.
+- Mensagens de API e biblioteca foram atualizadas para o fluxo atual de cinco bibliotecas.
+- Documentação atualizada para Biblioteca 5 e catálogo de 337 itens.
+- Adicionada validação automatizada do projeto no GitHub para prevenir regressões.
+
 ## 2.2.5 — Correção do forEach
 
 - Corrige o erro `$(...).forEach is not a function` no leitor.
