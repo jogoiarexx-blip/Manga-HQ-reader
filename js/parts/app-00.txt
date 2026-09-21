@@ -1,0 +1,182 @@
+const $ = (s, root = document) => root.querySelector(s);
+const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+
+const CONFIG = {
+  appVersion: '2.1.0',
+  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', '1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy'],
+  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', 'https://drive.google.com/drive/folders/1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy'],
+  folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
+  folderUrl: 'https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
+  driveApiKey: '',
+  largeArchiveWarningMB: 180,
+  pageCacheLimit: 12,
+  ...(window.MHQR_CONFIG || {})
+};
+
+const LS = {
+  fav: 'mhqr:favorites',
+  progress: 'mhqr:progress',
+  theme: 'mhqr:theme',
+  apiKey: 'mhqr:driveApiKey',
+  prefs: 'mhqr:prefs',
+  catalog: 'mhqr:catalogCache',
+  syncMeta: 'mhqr:syncMeta',
+  bookmarks: 'mhqr:bookmarks',
+  display: 'mhqr:displayPrefs',
+  itemPrefs: 'mhqr:itemReaderPrefs'
+};
+
+
+
+const LOCAL_RUNTIME_URLS = { pdf:'./vendor/pdfjs/pdf.mjs', pdfWorker:'./vendor/pdfjs/pdf.worker.mjs', zip:'./vendor/jszip/jszip.mjs', unrar:'./vendor/unrar/unrar.mjs', unrarWasm:'./vendor/unrar/unrar.wasm' };
+const RUNTIME_URLS = [
+  'https://esm.sh/pdfjs-dist@6.3.289/build/pdf.mjs',
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.mjs',
+  'https://esm.sh/jszip@3.10.1',
+  'https://esm.sh/node-unrar-js@2.0.2?bundle',
+  'https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm'
+];
+function formatDateTime(ts) {
+  if (!ts) return '';
+  try { return new Intl.DateTimeFormat('pt-BR', { dateStyle:'short', timeStyle:'short' }).format(new Date(ts)); }
+  catch { return ''; }
+}
+function setNetworkStatus() {
+  const el = $('#networkStatus'); if (!el) return;
+  const online = navigator.onLine !== false;
+  el.textContent = online ? '● Online' : '● Offline';
+  el.classList.toggle('online', online); el.classList.toggle('offline', !online);
+  el.title = online ? 'Conectado à internet' : 'Sem internet — usando dados e HQs salvos';
+}
+async function warmReaderRuntimes() {
+  const el = $('#runtimeStatus');
+  if (!navigator.onLine) { if (el) { el.textContent = 'Offline: usando motores já armazenados no cache, quando disponíveis.'; el.className = 'runtime-status warn'; } return; }
+  if (el) { el.textContent = 'Preparando motores de PDF/CBR/CBZ para uso offline…'; el.className = 'runtime-status'; }
+  const results = await Promise.allSettled(RUNTIME_URLS.map(url => fetch(url, { mode:'cors', cache:'reload' }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })));
+  const ok = results.filter(r => r.status === 'fulfilled').length;
+  if (el) {
+    if (ok === RUNTIME_URLS.length) { el.textContent = 'Motores de PDF/CBR/CBZ preparados para uso offline após esta primeira conexão.'; el.className = 'runtime-status ok'; }
+    else { el.textContent = `Motores offline parcialmente preparados (${ok}/${RUNTIME_URLS.length}). O app tentará novamente quando houver internet.`; el.className = 'runtime-status warn'; }
+  }
+}
+
+const storageGet = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const storageSet = (key, value) => { try { localStorage.setItem(key, value); return true; } catch { return false; } };
+const storageRemove = key => { try { localStorage.removeItem(key); } catch {} };
+const readJson = (key, fallback) => {
+  try { return JSON.parse(storageGet(key)) ?? fallback; }
+  catch { return fallback; }
+};
+
+const state = {
+  items: [], filter: 'all', source: 'all', category: '', search: '', sort: 'name', current: null, renderLimit: 60,
+  pages: [], page: 0, mode: 'page', fit: 'contain', direction: 'ltr', zoom: 1, collection: '', archive: null,
+  pageUrls: new Map(), pageUse: new Map(), verticalObserver: null,
+  verticalScrollHandler: null, renderToken: 0, openToken: 0, pdfObjectUrl: '', pdfDoc: null, pdfRenderTask: null, largePending: null,
+  readerDownloadController: null, offlineControllers: new Map(), touchStart: null, offlineIds: new Set(), offlineMeta: new Map(), offlineBusy: new Set(), autoScrollId: 0, autoScrollLast: 0, pinch: null, immersive: false, trimMargins: false, syncController: null, syncStatus: [], thumbRenderToken: 0
+};
+
+const favorites = new Set(readJson(LS.fav, []));
+const progress = readJson(LS.progress, {});
+const bookmarks = readJson(LS.bookmarks, {});
+const displayPrefs = { brightness:100, contrast:100, sepia:0, ...readJson(LS.display, {}) };
+const itemReaderPrefs = readJson(LS.itemPrefs, {});
+const prefs = { defaultMode: 'page', direction: 'ltr', performance: 'auto', autoScrollSpeed: 46, ...readJson(LS.prefs, {}) };
+function savePrefs() { storageSet(LS.prefs, JSON.stringify(prefs)); }
+function saveBookmarks() { storageSet(LS.bookmarks, JSON.stringify(bookmarks)); }
+function saveDisplayPrefs() { storageSet(LS.display, JSON.stringify(displayPrefs)); }
+function saveItemReaderPrefs() { storageSet(LS.itemPrefs, JSON.stringify(itemReaderPrefs)); }
+function persistCurrentReaderPrefs() { if (!state.current?.id) return; itemReaderPrefs[state.current.id] = { mode:state.mode, direction:state.direction, fit:state.fit, trimMargins:Boolean(state.trimMargins) }; saveItemReaderPrefs(); }
+function currentBookmarkKey() { return state.current?.id || ''; }
+function bookmarkedPages() {
+  const key = currentBookmarkKey();
+  const arr = key && Array.isArray(bookmarks[key]) ? bookmarks[key] : [];
+  return new Set(arr.map(Number).filter(Number.isFinite));
+}
+function isCurrentPageBookmarked() { return bookmarkedPages().has(Number(state.page || 0)); }
+function updateBookmarkButton() {
+  const btn = $('#bookmarkBtn'); if (!btn) return;
+  const on = Boolean(state.current && isCurrentPageBookmarked());
+  btn.textContent = on ? '★ Marcada' : '☆ Marcador';
+  btn.classList.toggle('is-bookmarked', on);
+  btn.title = on ? 'Remover marcador desta página' : 'Marcar esta página';
+  updateBookmarkJumpButton();
+}
+function updateBookmarkJumpButton() {
+  const btn = $('#bookmarkJumpBtn'); if (!btn) return;
+  const pages = [...bookmarkedPages()].sort((a,b)=>a-b);
+  btn.textContent = `${pages.length ? '★' : '☆'} ${pages.length}`;
+  btn.disabled = !pages.length;
+  btn.title = pages.length ? `Próximo marcador (${pages.map(p=>p+1).join(', ')})` : 'Nenhum marcador neste arquivo';
+}
+function jumpToNextBookmark() {
+  const pages = [...bookmarkedPages()].sort((a,b)=>a-b);
+  if (!pages.length) return toast('Nenhum marcador neste arquivo.');
+  const next = pages.find(p => p > state.page) ?? pages[0];
+  setPage(next);
+}
+function togglePageBookmark() {
+  if (!state.current || !state.pages.length) return;
+  const key = currentBookmarkKey();
+  const set = bookmarkedPages();
+  const page = Number(state.page || 0);
+  if (set.has(page)) { set.delete(page); toast(`Marcador removido da página ${page + 1}.`); }
+  else { set.add(page); toast(`Página ${page + 1} marcada.`); }
+  bookmarks[key] = [...set].sort((a,b)=>a-b);
+  if (!bookmarks[key].length) delete bookmarks[key];
+  saveBookmarks(); updateBookmarkButton(); updatePageControls();
+}
+function applyDisplayPrefs() {
+  const reader = $('#reader'); if (!reader) return;
+  reader.style.setProperty('--reader-brightness', `${Number(displayPrefs.brightness || 100)}%`);
+  reader.style.setProperty('--reader-contrast', `${Number(displayPrefs.contrast || 100)}%`);
+  reader.style.setProperty('--reader-sepia', `${Number(displayPrefs.sepia || 0)}%`);
+  if ($('#brightnessRange')) $('#brightnessRange').value = String(displayPrefs.brightness || 100);
+  if ($('#contrastRange')) $('#contrastRange').value = String(displayPrefs.contrast || 100);
+  if ($('#sepiaRange')) $('#sepiaRange').value = String(displayPrefs.sepia || 0);
+  if ($('#brightnessValue')) $('#brightnessValue').textContent = `${displayPrefs.brightness || 100}%`;
+  if ($('#contrastValue')) $('#contrastValue').textContent = `${displayPrefs.contrast || 100}%`;
+  if ($('#sepiaValue')) $('#sepiaValue').textContent = `${displayPrefs.sepia || 0}%`;
+}
+function setDisplayPref(name, value) {
+  displayPrefs[name] = Number(value); saveDisplayPrefs(); applyDisplayPrefs();
+}
+function setImmersive(value = !state.immersive) {
+  state.immersive = Boolean(value);
+  $('#reader')?.classList.toggle('immersive', state.immersive);
+  if ($('#immersiveBtn')) $('#immersiveBtn').textContent = state.immersive ? '▣ Sair imersivo' : '◫ Imersivo';
+  if (state.immersive) closeReaderControls();
+}
+
+function performanceProfile() {
+  const mode = prefs.performance || 'auto';
+  const mobile = matchMedia('(max-width: 850px)').matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+  const memory = Number(navigator.deviceMemory || 0);
+  const cores = Number(navigator.hardwareConcurrency || 0);
+  const constrained = (memory && memory <= 4) || (cores && cores <= 4);
+  const eco = mode === 'eco' || (mode === 'auto' && mobile && constrained);
+  const quality = mode === 'quality';
+  const hugeComic = Boolean(state.current && extType(state.current)==='comic' && Number(state.current.size||0) > 180*1024*1024);
+  return {
+    mode, mobile, eco: eco || hugeComic, quality,
+    cacheLimit: (eco || hugeComic) ? 3 : (mobile && !quality ? 8 : Math.max(8, Number(CONFIG.pageCacheLimit || 12))),
+    pdfDpr: eco ? 1 : (mobile && !quality ? 1.35 : 2),
+    verticalWindow: eco ? 1 : (mobile && !quality ? 2 : 5),
+    observerMargin: eco ? 420 : (mobile && !quality ? 700 : 1200),
+    prefetch: !eco && !hugeComic && document.visibilityState !== 'hidden'
+  };
+}
+function performanceLabel() {
+  const p = performanceProfile();
+  return p.eco ? 'Econômico' : (p.quality ? 'Qualidade' : 'Automático');
+}
+
+let installPrompt = null;
+let unrarModulePromise = null;
+let unrarWasmPromise = null;
+let jszipModulePromise = null;
+let pdfjsModulePromise = null;
+
+
+
+const OFFLINE_DB = { n
