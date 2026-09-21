@@ -2,7 +2,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '2.2.2',
+  appVersion: '2.2.3',
   folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', '1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', '1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
   folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', 'https://drive.google.com/drive/folders/1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', 'https://drive.google.com/drive/folders/1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
@@ -369,6 +369,14 @@ function directDownloadUrl(item) {
   if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey);
   return u.href;
 }
+function drivePagePublicUrl(page, size = 'w2400') {
+  if (!page?.id) return '';
+  const u = new URL('https://drive.google.com/thumbnail');
+  u.searchParams.set('id', page.id);
+  u.searchParams.set('sz', size);
+  if (page.resourceKey) u.searchParams.set('resourcekey', page.resourceKey);
+  return u.href;
+}
 async function downloadItem(item) {
   if (!item) return;
   if (extType(item) === 'pages') {
@@ -505,6 +513,7 @@ async function listDriveRoot(apiKey, rootId, index, signal, onProgress) {
         seriesTitle,
         issueNumber: manifest?.issue ?? folder.issueNumber ?? null,
         pageCount: ordered.length,
+        drivePages: ordered.map(file => ({ id:file.id, name:file.name, size:Number(file.size || 0), resourceKey:file.resourceKey || '' })),
         coverPageId: cover?.id || '',
         coverResourceKey: cover?.resourceKey || '',
         thumbnailLink: cover?.id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(cover.id)}&sz=w420` : '',
@@ -1159,8 +1168,11 @@ async function openComic(item, token) {
 }
 
 async function loadDrivePageFolder(item, token) {
+  if (Array.isArray(item?.drivePages) && item.drivePages.length) {
+    return { manifest: { title:item.name, issue:item.issueNumber, pageCount:item.drivePages.length }, files:item.drivePages };
+  }
   const key = getApiKey();
-  if (!key) throw new Error('Configure a Google Drive API Key para ler pastas de páginas WebP diretamente do Drive.');
+  if (!key) throw new Error('Esta edição ainda não possui a lista local de páginas. Atualize o catálogo ou configure a Google Drive API Key para descobri-las.');
   const files = await listDriveChildren(key, item.driveFolderId, undefined);
   if (token !== state.openToken) throw new DOMException('Leitura cancelada.', 'AbortError');
   const images = files.filter(file => isImage(file.name || ''));
@@ -1172,7 +1184,8 @@ async function loadDrivePageFolder(item, token) {
   }
   const ordered = orderedDriveImages(images, manifest);
   if (!ordered.length) throw new Error('Nenhuma página de imagem foi encontrada nesta pasta do Google Drive.');
-  return { manifest, files: ordered };
+  item.drivePages = ordered.map(file => ({ id:file.id, name:file.name, size:Number(file.size || 0), resourceKey:file.resourceKey || '' }));
+  return { manifest, files:item.drivePages };
 }
 async function openDrivePages(item, token) {
   $('#readerLoading').classList.remove('hidden');
@@ -1185,7 +1198,7 @@ async function openDrivePages(item, token) {
     state.pages = bundle.files.map((file, index) => ({ ...file, index }));
     state.page = Math.max(0, Math.min(state.page, state.pages.length - 1));
     if (bundle.manifest?.title) $('#readerTitle').textContent = bundle.manifest.title;
-    $('#readerMeta').textContent = `${state.pages.length} páginas • WebP no Google Drive`;
+    $('#readerMeta').textContent = `${state.pages.length} páginas • WebP direto do Google Drive`;
     $('#readerLoading').classList.add('hidden');
     $('#pageRange').max = state.pages.length;
     updateReaderPrefsUI();
@@ -1293,20 +1306,17 @@ async function getPageUrl(index, expectedToken = state.renderToken) {
   const page = state.pages[index];
   if (!archive || !page) throw new Error('Página inexistente.');
   if (state.pageUrls.has(index)) { state.pageUse.set(index, Date.now()); return state.pageUrls.get(index); }
-  const entry = archive.entries[index]; let blob;
+  const entry = archive.entries[index];
   if (archive.type === 'drive-pages') {
-    const key = getApiKey();
-    if (!key) throw new Error('Google Drive API Key não configurada.');
-    const u = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(entry.id)}`);
-    u.searchParams.set('alt', 'media'); u.searchParams.set('key', key);
-    const headers = entry.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${entry.id}/${entry.resourceKey}` } : {};
-    const r = await fetch(u, { mode:'cors', headers, cache:'force-cache' });
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      throw new Error(d.error?.message || `Drive API: HTTP ${r.status}`);
-    }
-    blob = await r.blob();
-  } else if (archive.type === 'zip') {
+    const url = drivePagePublicUrl(entry, performanceProfile().eco ? 'w1800' : 'w2400');
+    if (!url) throw new Error(`Página ${index + 1} sem ID do Google Drive.`);
+    if (expectedToken !== state.renderToken || archive !== state.archive) throw new DOMException('Leitura cancelada.', 'AbortError');
+    state.pageUrls.set(index, url); state.pageUse.set(index, Date.now());
+    trimPageCache(index);
+    return url;
+  }
+  let blob;
+  if (archive.type === 'zip') {
     blob = await entry.async('blob');
   } else {
     const result = archive.engine.extract({ files: [entry.name] });
@@ -1329,22 +1339,28 @@ function trimPageCache(center) {
   const candidates = [...state.pageUrls.keys()].filter(i => Math.abs(i - center) > 2).sort((a, b) => (state.pageUse.get(a) || 0) - (state.pageUse.get(b) || 0));
   while (state.pageUrls.size > limit && candidates.length) {
     const i = candidates.shift(); const url = state.pageUrls.get(i);
-    URL.revokeObjectURL(url); state.pageUrls.delete(i); state.pageUse.delete(i);
+    if (String(url).startsWith('blob:')) URL.revokeObjectURL(url); state.pageUrls.delete(i); state.pageUse.delete(i);
     const slot = $(`.page-slot[data-i="${i}"]`);
     if (slot) { slot.dataset.loaded = ''; slot.innerHTML = `<span class="page-placeholder">Página ${i + 1}</span>`; }
   }
 }
 
 function wirePagedImageErrors(indexes) {
-  $$('.page-stage img').forEach((img, n) => {
+  $('.page-stage img').forEach((img, n) => {
     img.decoding = 'async';
     img.addEventListener('error', () => {
       const index = indexes[n] ?? state.page;
+      const entry = state.archive?.entries?.[index];
+      if (state.archive?.type === 'drive-pages' && entry?.id && img.dataset.driveFallback !== '1') {
+        img.dataset.driveFallback = '1';
+        img.src = directDownloadUrl(entry);
+        return;
+      }
       const wrap = document.createElement('div');
       wrap.className = 'page-load-error';
-      wrap.innerHTML = `<strong>Não foi possível decodificar a página ${index + 1}</strong><button data-retry-page="${index}">↻ Tentar novamente</button>`;
+      wrap.innerHTML = `<strong>Não foi possível carregar a página ${index + 1} do Google Drive</strong><button data-retry-page="${index}">↻ Tentar novamente</button>`;
       img.replaceWith(wrap);
-    }, { once:true });
+    });
   });
 }
 async function renderReaderPages() {
@@ -1420,7 +1436,16 @@ async function loadVerticalSlot(slot) {
     if (!slot.isConnected) return;
     const img = new Image(); img.alt = `Página ${i + 1}`; img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.src = url;
     img.onload = () => { if (img.naturalWidth && img.naturalHeight) slot.style.aspectRatio = `${img.naturalWidth}/${img.naturalHeight}`; };
-    img.onerror = () => { slot.dataset.loaded = ''; slot.innerHTML = `<button class="page-retry" data-retry-page="${i}">↻ Imagem incompatível ou corrompida • tentar novamente</button>`; };
+    img.onerror = () => {
+      const entry = state.archive?.entries?.[i];
+      if (state.archive?.type === 'drive-pages' && entry?.id && img.dataset.driveFallback !== '1') {
+        img.dataset.driveFallback = '1';
+        img.src = directDownloadUrl(entry);
+        return;
+      }
+      slot.dataset.loaded = '';
+      slot.innerHTML = `<button class="page-retry" data-retry-page="${i}">↻ Não foi possível carregar a página do Drive • tentar novamente</button>`;
+    };
     slot.innerHTML = ''; slot.appendChild(img);
   } catch (err) {
     slot.dataset.loaded = '';
@@ -1505,7 +1530,7 @@ async function cleanupReaderData() {
   stopVerticalObserver();
   state.renderToken++;
   state.touchStart = null;
-  for (const url of state.pageUrls.values()) URL.revokeObjectURL(url);
+  for (const url of state.pageUrls.values()) if (String(url).startsWith('blob:')) URL.revokeObjectURL(url);
   state.pageUrls.clear(); state.pageUse.clear();
   if (state.pdfObjectUrl) { URL.revokeObjectURL(state.pdfObjectUrl); state.pdfObjectUrl = ''; }
   state.pdfRenderTask?.cancel?.(); state.pdfRenderTask = null;
@@ -1854,7 +1879,7 @@ $('#readerBody').addEventListener('touchend', e => {
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.2.2', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.2.3', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
