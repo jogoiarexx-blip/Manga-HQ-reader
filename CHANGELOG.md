@@ -1,3 +1,11 @@
+## 2.2.1 — Biblioteca 5
+
+- Adiciona a pasta pública do Google Drive como Biblioteca 5.
+- Biblioteca 5 contém Godzilla vs Power Rangers #1 a #5 em páginas WebP separadas.
+- Mantém leitura direta via Drive API com series.json e manifest.json.
+- Adiciona filtro específico “Biblioteca 5 — Godzilla vs Power Rangers”.
+- Atualiza o cache PWA para v2.2.1.
+
 ## 2.2.0 — Leitura direta de pastas WebP no Google Drive
 
 - Detecta automaticamente pastas de HQ com páginas numeradas em WebP/JPG/PNG.
