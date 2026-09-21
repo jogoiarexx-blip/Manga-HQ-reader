@@ -377,6 +377,37 @@ function drivePagePublicUrl(page, size = 'w2400') {
   if (page.resourceKey) u.searchParams.set('resourcekey', page.resourceKey);
   return u.href;
 }
+function drivePageFallbackUrls(page, size = 'w2400') {
+  if (!page?.id) return [];
+  const id = encodeURIComponent(page.id);
+  const resource = page.resourceKey ? `&resourcekey=${encodeURIComponent(page.resourceKey)}` : '';
+  return [
+    drivePagePublicUrl(page, size),
+    `https://lh3.googleusercontent.com/d/${id}=${size}`,
+    `https://drive.google.com/uc?export=view&id=${id}${resource}`,
+    directDownloadUrl(page)
+  ].filter(Boolean);
+}
+async function fetchDrivePageWithApi(page, expectedToken = state.renderToken) {
+  const key = getApiKey();
+  if (!key || !page?.id) return '';
+  const archive = state.archive;
+  const u = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(page.id)}`);
+  u.searchParams.set('alt', 'media');
+  u.searchParams.set('key', key);
+  const headers = page.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${page.id}/${page.resourceKey}` } : {};
+  try {
+    const r = await fetch(u, { mode:'cors', headers, cache:'force-cache' });
+    if (!r.ok) return '';
+    const contentType = r.headers.get('content-type') || '';
+    if (contentType && !contentType.startsWith('image/')) return '';
+    const blob = await r.blob();
+    if (!blob.size || expectedToken !== state.renderToken || archive !== state.archive) return '';
+    return URL.createObjectURL(blob);
+  } catch {
+    return '';
+  }
+}
 async function downloadItem(item) {
   if (!item) return;
   if (extType(item) === 'pages') {
@@ -1322,9 +1353,14 @@ async function getPageUrl(index, expectedToken = state.renderToken) {
   if (state.pageUrls.has(index)) { state.pageUse.set(index, Date.now()); return state.pageUrls.get(index); }
   const entry = archive.entries[index];
   if (archive.type === 'drive-pages') {
-    const url = drivePagePublicUrl(entry, performanceProfile().eco ? 'w1800' : 'w2400');
+    const size = performanceProfile().eco ? 'w1800' : 'w2400';
+    const apiUrl = await fetchDrivePageWithApi(entry, expectedToken);
+    const url = apiUrl || drivePagePublicUrl(entry, size);
     if (!url) throw new Error(`Página ${index + 1} sem ID do Google Drive.`);
-    if (expectedToken !== state.renderToken || archive !== state.archive) throw new DOMException('Leitura cancelada.', 'AbortError');
+    if (expectedToken !== state.renderToken || archive !== state.archive) {
+      if (String(apiUrl).startsWith('blob:')) URL.revokeObjectURL(apiUrl);
+      throw new DOMException('Leitura cancelada.', 'AbortError');
+    }
     state.pageUrls.set(index, url); state.pageUse.set(index, Date.now());
     trimPageCache(index);
     return url;
@@ -1371,19 +1407,24 @@ function trimPageCache(center) {
 }
 
 function wirePagedImageErrors(indexes) {
-  $$('.page-stage img').forEach((img, n) => {
+  $('.page-stage img').forEach((img, n) => {
     img.decoding = 'async';
     img.addEventListener('error', () => {
       const index = indexes[n] ?? state.page;
       const entry = state.archive?.entries?.[index];
-      if (state.archive?.type === 'drive-pages' && entry?.id && img.dataset.driveFallback !== '1') {
-        img.dataset.driveFallback = '1';
-        img.src = directDownloadUrl(entry);
-        return;
+      if (state.archive?.type === 'drive-pages' && entry?.id) {
+        const urls = drivePageFallbackUrls(entry, performanceProfile().eco ? 'w1800' : 'w2400');
+        const current = Number(img.dataset.driveFallbackIndex || 0);
+        const next = current + 1;
+        if (next < urls.length) {
+          img.dataset.driveFallbackIndex = String(next);
+          img.src = urls[next];
+          return;
+        }
       }
       const wrap = document.createElement('div');
       wrap.className = 'page-load-error';
-      wrap.innerHTML = `<strong>Não foi possível carregar a página ${index + 1} do Google Drive</strong><button data-retry-page="${index}">↻ Tentar novamente</button>`;
+      wrap.innerHTML = `<strong>Não foi possível carregar a página ${index + 1} do Google Drive</strong><span>O Drive recusou o acesso direto. Confira se o arquivo está público ou configure uma Drive API Key.</span><div><button data-retry-page="${index}">↻ Tentar novamente</button><button data-drive-page-settings>⚙ Configurar Drive</button></div>`;
       img.replaceWith(wrap);
     });
   });
@@ -1464,13 +1505,18 @@ async function loadVerticalSlot(slot) {
     img.onload = () => { if (img.naturalWidth && img.naturalHeight) slot.style.aspectRatio = `${img.naturalWidth}/${img.naturalHeight}`; };
     img.onerror = () => {
       const entry = state.archive?.entries?.[i];
-      if (state.archive?.type === 'drive-pages' && entry?.id && img.dataset.driveFallback !== '1') {
-        img.dataset.driveFallback = '1';
-        img.src = directDownloadUrl(entry);
-        return;
+      if (state.archive?.type === 'drive-pages' && entry?.id) {
+        const urls = drivePageFallbackUrls(entry, performanceProfile().eco ? 'w1800' : 'w2400');
+        const current = Number(img.dataset.driveFallbackIndex || 0);
+        const next = current + 1;
+        if (next < urls.length) {
+          img.dataset.driveFallbackIndex = String(next);
+          img.src = urls[next];
+          return;
+        }
       }
       slot.dataset.loaded = '';
-      slot.innerHTML = `<button class="page-retry" data-retry-page="${i}">↻ Não foi possível carregar a página do Drive • tentar novamente</button>`;
+      slot.innerHTML = `<div class="page-load-error"><strong>Falha ao carregar a página ${i + 1}</strong><span>Confira o compartilhamento público do Drive ou configure uma API Key.</span><div><button data-retry-page="${i}">↻ Tentar novamente</button><button data-drive-page-settings>⚙ Configurar Drive</button></div></div>`;
     };
     slot.innerHTML = ''; slot.appendChild(img);
   } catch (err) {
@@ -1634,8 +1680,21 @@ document.addEventListener('click', e => {
   if (categoryBtn) { state.category = categoryBtn.dataset.category || ''; state.collection = ''; resetRenderLimit(); render(); return; }
   const bookmarkOpen = e.target.closest('[data-bookmark-open]');
   if (bookmarkOpen) { const item=state.items.find(x=>x.id===bookmarkOpen.dataset.bookmarkOpen); if(item){ const pg=Number(bookmarkOpen.dataset.bookmarkPage||0); progress[item.id]={...(progress[item.id]||{}),page:pg,percent:progress[item.id]?.percent||0,updated:Date.now()}; saveProgress(); openItem(item); } return; }
+  const drivePageSettings = e.target.closest('[data-drive-page-settings]');
+  if (drivePageSettings) { openSettings(); return; }
   const retryPage = e.target.closest('[data-retry-page]');
-  if (retryPage) { const i = Number(retryPage.dataset.retryPage); if (Number.isFinite(i)) { state.pageUrls.delete(i); const slot = $(`.page-slot[data-i="${i}"]`); if (slot) { slot.dataset.loaded = ''; loadVerticalSlot(slot).catch(() => {}); } else { setPage(i); } } return; }
+  if (retryPage) {
+    const i = Number(retryPage.dataset.retryPage);
+    if (Number.isFinite(i)) {
+      const oldUrl = state.pageUrls.get(i);
+      if (String(oldUrl).startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+      state.pageUrls.delete(i); state.pageUse.delete(i);
+      const slot = $(`.page-slot[data-i="${i}"]`);
+      if (slot) { slot.dataset.loaded = ''; loadVerticalSlot(slot).catch(() => {}); }
+      else { setPage(i); }
+    }
+    return;
+  }
   const card = e.target.closest('.card');
   if (card) {
     const item = state.items.find(x => x.id === card.dataset.id); if (!item) return;
