@@ -1,3 +1,12 @@
+## 2.2.3 — Correção da abertura das páginas WebP
+
+- Corrige o caso em que a capa do Drive aparecia, mas as páginas da HQ não abriam.
+- As edições WebP públicas passam a carregar as páginas diretamente pelo Google Drive, sem exigir Drive API Key para renderização.
+- O catálogo passa a guardar os IDs de todas as páginas WebP das cinco edições de Godzilla vs Power Rangers.
+- Adiciona fallback automático para uma segunda URL do Drive quando uma página falha.
+- A Drive API continua disponível para sincronização e descoberta de novas pastas.
+- Renova o cache PWA para evitar execução do JavaScript antigo.
+
 ## 2.2.2 — Catálogo imediato da Biblioteca 5
 
 - Adiciona Godzilla vs Power Rangers #1 a #5 ao catálogo estático.
