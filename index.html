@@ -4,25 +4,25 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
-  <meta name="description" content="Leitor de mangás e HQs em PDF, CBR, CBZ e pastas WebP conectado a bibliotecas do Google Drive." />
+  <meta name="description" content="Leitor local de mangás e HQs em PDF, CBR, CBZ, RAR e ZIP, sem acervo pré-carregado." />
   <title>Manga HQ Reader v2.3.1</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-64.png" type="image/png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
   <link rel="stylesheet" href="./css/app.css?v=2.3.1" />
 </head>
-<body>
+<body class="no-drive-build">
   <div class="bg-decor" aria-hidden="true"><span class="orb orb-a"></span><span class="orb orb-b"></span><span class="orb orb-c"></span><span class="grid-fade"></span></div>
   <div id="app">
     <header class="topbar">
       <div class="brand">
         <img class="brand-logo" src="./logo-manga-hq-reader.png" alt="Manga HQ Reader" />
-        <div class="brand-copy"><strong>Manga HQ Reader</strong><small>Google Drive Library</small></div>
+        <div class="brand-copy"><strong>Manga HQ Reader</strong><small>Leitor local</small></div>
       </div>
       <div class="top-actions">
         <button id="localBtn" class="ghost" title="Abrir arquivo do aparelho" aria-label="Abrir arquivo do aparelho">Abrir arquivo</button>
         <button id="installBtn" class="ghost hidden">Instalar</button>
-        <button id="driveBtn" class="ghost">Pastas Drive</button>
+        <button id="driveBtn" class="ghost">Fontes</button>
         <button id="settingsBtn" class="icon-btn" title="Configurações">⚙</button>
         <span id="networkStatus" class="network-status" role="status" aria-live="polite">● Online</span><button id="themeBtn" class="icon-btn" title="Alternar tema">◐</button>
       </div>
@@ -51,10 +51,10 @@
       <section class="content">
         <div class="hero">
           <div class="hero-copy">
-            <span class="eyebrow">CINCO BIBLIOTECAS • UM LEITOR</span>
+            <span class="eyebrow">LEITOR LIMPO • SEM ACERVO</span>
             <h1>Mangás e HQs em um leitor só.</h1>
-            <p>Feito para GitHub Pages: cinco bibliotecas do Google Drive, fonte externa Batcaverna, categorias separadas, carrossel de destaques, PDF, CBR/CBZ e HQs em páginas WebP carregadas diretamente do Drive.</p>
-            <div class="hero-tags"><span>PDF</span><span>CBR / CBZ / RAR / ZIP</span><span>WebP direto do Drive</span><span>RTL inteligente</span><span>Progresso automático</span></div>
+            <p>Versão sem acervo pré-carregado. Abra seus próprios arquivos PDF, CBR, CBZ, RAR ou ZIP e use o leitor normalmente no PC ou no celular.</p>
+            <div class="hero-tags"><span>PDF</span><span>CBR / CBZ / RAR / ZIP</span><span>Arquivos locais</span><span>RTL inteligente</span><span>Progresso automático</span></div>
           </div>
           <div class="stats">
             <div><b id="itemCount">0</b><span>arquivos</span></div>
@@ -67,7 +67,7 @@
         <div id="catalogNotice" class="catalog-notice hidden"><strong>Catálogo local</strong><span id="catalogNoticeText"></span></div>
 
         <div id="apiNotice" class="notice hidden">
-          <div><strong>Leitura direta pelo Google Drive</strong><span>HQs WebP já catalogadas abrem página a página diretamente do Drive. Configure uma chave da Google Drive API para descobrir novas pastas e sincronizar alterações.</span></div>
+          <div><strong>Leitura direta pelo Google Drive</strong><span>Esta versão não possui acervo pré-carregado. Use “Abrir arquivo” para ler seus próprios quadrinhos.</span></div>
           <button id="noticeSettingsBtn">Configurar</button>
         </div>
 
@@ -103,11 +103,6 @@
           <label class="search"><span>⌕</span><input id="searchInput" placeholder="Buscar título, volume, edição..." /></label>
           <select id="sourceSelect" aria-label="Filtrar por fonte">
             <option value="all">Todas as fontes</option>
-            <option value="library-1">Biblioteca 1</option>
-            <option value="library-2">Biblioteca 2</option>
-            <option value="library-3">Biblioteca 3 — Batman</option>
-            <option value="library-4">Biblioteca 4 — Novidades</option>
-            <option value="library-5">Biblioteca 5 — Godzilla vs Power Rangers</option>
             <option value="offline">Offline/local</option>
           </select>
           <select id="sortSelect" aria-label="Ordenar biblioteca">
@@ -226,7 +221,7 @@
 
   <div id="driveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <div class="modal-card compact">
-      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Cinco bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
+      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Leitor independente, sem acervo conectado</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
       <div class="modal-body"><div id="driveSummary" class="drive-summary"></div><div id="driveRoots" class="drive-roots"></div><div id="externalSources" class="external-sources"></div></div>
     </div>
   </div>
