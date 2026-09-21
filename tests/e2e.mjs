@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 
 const BASE = process.env.TEST_BASE_URL || 'http://127.0.0.1:4173/';
 const TARGET = 'Godzilla vs Power Rangers #1';
+const DRIVE_PAGE_ID = '175hWbWVwqDh4LTQtkxIJcK5Nn6rfzbif';
+const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M/wn4GBgYGJAQoAHgQCAZqV0QAAAABJRU5ErkJggg==','base64');
+
+async function probeAnonymousDrive() {
+  const urls = [
+    `https://drive.google.com/thumbnail?id=${DRIVE_PAGE_ID}&sz=w420`,
+    `https://drive.google.com/uc?export=view&id=${DRIVE_PAGE_ID}`,
+    `https://drive.usercontent.google.com/download?id=${DRIVE_PAGE_ID}&export=download&confirm=t`,
+    `https://lh3.googleusercontent.com/d/${DRIVE_PAGE_ID}=w420`
+  ];
+  const results = [];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { redirect:'follow', signal:AbortSignal.timeout(12000) });
+      results.push({ url:new URL(url).hostname, status:response.status, type:response.headers.get('content-type') || '', final:new URL(response.url).hostname });
+    } catch (err) {
+      results.push({ url:new URL(url).hostname, error:err.name || String(err) });
+    }
+  }
+  console.log('Drive anonymous probe:', JSON.stringify(results));
+}
 
 async function waitForReaderPage(page) {
   await page.locator('#reader:not(.hidden)').waitFor({ state:'visible', timeout:15000 });
@@ -29,6 +50,10 @@ async function runProfile(browser, name, contextOptions) {
   const context = await browser.newContext({
     ...contextOptions,
     serviceWorkers: 'block'
+  });
+  // UI/responsividade é testada de forma determinística; a disponibilidade pública do Drive é diagnosticada separadamente.
+  await context.route(/https:\/\/(?:drive\.google\.com|drive\.usercontent\.google\.com|lh3\.googleusercontent\.com)\//, route => {
+    route.fulfill({ status:200, contentType:'image/png', body:PIXEL });
   });
   const page = await context.newPage();
   const errors = [];
@@ -106,6 +131,7 @@ async function runProfile(browser, name, contextOptions) {
   console.log(`E2E OK: ${name}`);
 }
 
+await probeAnonymousDrive();
 const browser = await chromium.launch({ headless:true });
 try {
   await runProfile(browser, 'desktop', {
