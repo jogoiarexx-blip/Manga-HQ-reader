@@ -1348,7 +1348,7 @@ function trimPageCache(center) {
 }
 
 function wirePagedImageErrors(indexes) {
-  $('.page-stage img').forEach((img, n) => {
+  $$('.page-stage img').forEach((img, n) => {
     img.decoding = 'async';
     img.addEventListener('error', () => {
       const index = indexes[n] ?? state.page;
