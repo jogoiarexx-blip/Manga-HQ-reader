@@ -2,7 +2,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '2.2.5',
+  appVersion: '2.3.0',
   folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', '1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', '1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
   folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', 'https://drive.google.com/drive/folders/1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', 'https://drive.google.com/drive/folders/1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
@@ -589,7 +589,7 @@ async function loadLibrary() {
       state.items = await loadStaticCatalog(); const sm=readJson(LS.syncMeta,{}); const last=formatDateTime(sm.at);
       $('#syncStatus').textContent = last ? 'Catálogo salvo ativo' : 'Catálogo local ativo';
       $('#syncDetail').textContent = `${state.items.length} itens disponíveis${last ? ` • última sincronização: ${last}` : ' • configure a API para carregar todas as subpastas'}`;
-      $('#catalogNoticeText').textContent = 'Sem a API Key, o app mostra o catálogo incluído no ZIP. Com a API, ele percorre as quatro bibliotecas e todas as subpastas.'; $('#catalogNotice').classList.remove('hidden');
+      $('#catalogNoticeText').textContent = `Sem a API Key, o app mostra o catálogo publicado. Com a API, ele percorre as ${(CONFIG.folderIds || []).length || 1} bibliotecas e descobre novas pastas e arquivos.`; $('#catalogNotice').classList.remove('hidden');
     }
   } catch (err) {
     state.items = await loadStaticCatalog().catch(()=>[]); $('#syncStatus').textContent='Falha no catálogo'; $('#syncDetail').textContent=err.message; toast(`Falha ao carregar biblioteca: ${err.message}`);
@@ -879,19 +879,27 @@ function modeIcon(mode = state.mode) {
 }
 function isVerticalMode(mode = state.mode) { return mode === 'vertical' || mode === 'webtoon'; }
 function isPagedMode(mode = state.mode) { return mode === 'page' || mode === 'spread'; }
+function spreadBaseIndex(page = state.page) {
+  const n = Math.max(0, Number(page) || 0);
+  if (n <= 0) return 0;
+  // Depois da capa, os pares são 2–3, 4–5, 6–7...
+  return n % 2 === 0 ? n - 1 : n;
+}
 function spreadIndexes(page = state.page) {
   if (effectiveMode() !== 'spread') return [Math.max(0, page)];
-  // Capa sozinha; depois disso, exibe duas páginas lado a lado.
-  if (page <= 0) return [0];
-  return [page, page + 1].filter(i => i >= 0 && i < state.pages.length);
+  const base = spreadBaseIndex(page);
+  if (base <= 0) return [0];
+  return [base, base + 1].filter(i => i >= 0 && i < state.pages.length);
 }
 function nextPageIndex(page = state.page) {
   if (effectiveMode() !== 'spread') return page + 1;
-  return page <= 0 ? 1 : page + 2;
+  const base = spreadBaseIndex(page);
+  return base <= 0 ? 1 : base + 2;
 }
 function prevPageIndex(page = state.page) {
   if (effectiveMode() !== 'spread') return page - 1;
-  return page <= 2 ? 0 : page - 2;
+  const base = spreadBaseIndex(page);
+  return base <= 1 ? 0 : base - 2;
 }
 function pageStep() { return effectiveMode() === 'spread' ? (state.page <= 0 ? 1 : 2) : 1; }
 function normalizedMode(mode) { return ['page','spread','vertical','webtoon'].includes(mode) ? mode : 'page'; }
@@ -1224,7 +1232,11 @@ async function renderThumbDrawer() {
       if (isPdf) {
         const page=await state.pdfDoc.getPage(i+1); const base=page.getViewport({scale:1}); const scale=Math.min(1,100/base.width); const vp=page.getViewport({scale});
         const c=document.createElement('canvas'); c.width=Math.max(1,Math.floor(vp.width)); c.height=Math.max(1,Math.floor(vp.height)); await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise; mount.appendChild(c);
-      } else { const url=await getPageUrl(i); const img=document.createElement('img'); img.src=url; img.alt=''; img.loading='lazy'; mount.appendChild(img); }
+      } else {
+        const entry = state.archive?.entries?.[i];
+        const url = state.archive?.type === 'drive-pages' && entry?.id ? drivePagePublicUrl(entry, 'w280') : await getPageUrl(i);
+        const img=document.createElement('img'); img.src=url; img.alt=''; img.loading='lazy'; img.decoding='async'; mount.appendChild(img);
+      }
     } catch { mount.textContent='—'; }
     if (i%8===7) await new Promise(r=>setTimeout(r,0));
   }
@@ -1335,6 +1347,17 @@ async function getPageUrl(index, expectedToken = state.renderToken) {
   return url;
 }
 
+async function prefetchPage(index, expectedToken = state.renderToken) {
+  if (index < 0 || index >= state.pages.length || expectedToken !== state.renderToken) return;
+  const url = await getPageUrl(index, expectedToken);
+  if (state.archive?.type === 'drive-pages' && expectedToken === state.renderToken && url) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.fetchPriority = 'low';
+    img.src = url;
+  }
+}
+
 function trimPageCache(center) {
   const limit = performanceProfile().cacheLimit;
   if (state.pageUrls.size <= limit) return;
@@ -1367,6 +1390,7 @@ function wirePagedImageErrors(indexes) {
 }
 async function renderReaderPages() {
   if (!state.pages.length) return;
+  if (effectiveMode() === 'spread') state.page = spreadBaseIndex(state.page);
   const token = ++state.renderToken;
   stopVerticalObserver();
   const isPdf = extType(state.current || {}) === 'pdf' && Boolean(state.pdfDoc);
@@ -1398,7 +1422,7 @@ async function renderReaderPages() {
       wirePagedImageErrors(indexes);
       if (performanceProfile().prefetch) {
         const step = spread ? 2 : 1;
-        [state.page - step, state.page + step].filter(i => i >= 0 && i < state.pages.length).forEach(i => setTimeout(() => getPageUrl(i, token).catch(() => {}), 50));
+        [state.page - step, state.page + step].filter(i => i >= 0 && i < state.pages.length).forEach(i => setTimeout(() => prefetchPage(i, token).catch(() => {}), 50));
       }
     } catch (err) {
       if (token === state.renderToken) showReaderError('Falha ao carregar página', err.message);
@@ -1468,7 +1492,8 @@ function cleanupVerticalSlots(force = false) {
     slot.dataset.loaded = '';
     slot.innerHTML = `<span class="page-placeholder">Página ${i + 1}</span>`;
     if (extType(state.current || {}) !== 'pdf' && state.pageUrls.has(i)) {
-      URL.revokeObjectURL(state.pageUrls.get(i));
+      const cachedUrl = state.pageUrls.get(i);
+      if (String(cachedUrl).startsWith('blob:')) URL.revokeObjectURL(cachedUrl);
       state.pageUrls.delete(i); state.pageUse.delete(i);
     }
   }
@@ -1640,7 +1665,7 @@ function openDriveModal() {
   const counts = libraryCounts();
   const sync = readJson(LS.syncMeta, {});
   const last = formatDateTime(sync.at);
-  $('#driveSummary').innerHTML = `<div><strong>${getApiKey() ? 'Drive API configurada' : 'Drive API não configurada'}</strong><small>${getApiKey() ? `${state.items.length} itens disponíveis${last ? ` • última sincronização ${last}` : ''}` : 'O catálogo local funciona, mas a API é recomendada para ler e sincronizar tudo.'}</small></div>`;
+  $('#driveSummary').innerHTML = `<div><strong>${getApiKey() ? 'Drive API configurada' : 'Drive API não configurada'}</strong><small>${getApiKey() ? `${state.items.length} itens disponíveis${last ? ` • última sincronização ${last}` : ''}` : 'O catálogo publicado funciona sem a API; configure uma chave para descobrir novos arquivos e fazer sincronização completa.'}</small></div>`;
   $('#driveRoots').innerHTML = urls.map((url, i) => { const key=`library-${i+1}`; const count=counts[key]||0; return `<button class="drive-root" data-drive-url="${escapeHtml(url)}"><span>Biblioteca ${i + 1}<em>${count ? `${count} itens carregados` : 'Abrir pasta no Drive'}</em></span><small>Google Drive próprio • ${getApiKey() ? 'API pronta' : 'configure a API para sincronização completa'}</small><b>↗</b></button>`; }).join('');
   const external = Array.isArray(CONFIG.externalSources) ? CONFIG.externalSources : [];
   $('#externalSources').innerHTML = external.length ? `<div class="source-section-title">Fontes externas</div>${external.map(src => `<article class="external-source-card"><div class="external-source-head"><div><span class="external-badge">EXTERNO</span><strong>${escapeHtml(src.name || 'Fonte externa')}</strong></div></div><p>${escapeHtml(src.note || 'Conteúdo hospedado em uma fonte externa.')}</p><div class="external-source-actions">${src.siteUrl ? `<button class="secondary-btn" data-external-url="${escapeHtml(src.siteUrl)}">Abrir site</button>` : ''}${src.driveUrl ? `<button data-external-url="${escapeHtml(src.driveUrl)}">Abrir acervo ↗</button>` : ''}</div></article>`).join('')}` : '';
@@ -1757,10 +1782,11 @@ $('#fitBtn').addEventListener('click', async () => {
   const fits=['contain','width','height']; state.fit=fits[(fits.indexOf(state.fit)+1)%fits.length]; persistCurrentReaderPrefs(); updateReaderPrefsUI(); await renderReaderPages();
 });
 $('#trimBtn')?.addEventListener('click', async () => { state.trimMargins=!state.trimMargins; $('#reader')?.classList.toggle('trim-margins',state.trimMargins); persistCurrentReaderPrefs(); updateReaderPrefsUI(); await renderReaderPages(); });
-$('#directionBtn').addEventListener('click', () => {
+$('#directionBtn').addEventListener('click', async () => {
   if (window.matchMedia('(max-width:850px)').matches) closeReaderControls();
   state.direction = state.direction === 'rtl' ? 'ltr' : 'rtl';
   prefs.direction = state.direction; savePrefs(); persistCurrentReaderPrefs(); updateReaderPrefsUI(); updateProgress();
+  if (state.pages.length && effectiveMode() === 'spread') await renderReaderPages();
   toast(state.direction === 'rtl' ? 'Modo mangá: avance tocando à esquerda.' : 'Leitura ocidental: avance tocando à direita.');
 });
 async function setZoom(value) {
@@ -1813,6 +1839,7 @@ document.addEventListener('keydown', e => {
   if (e.target?.matches?.('input,select,textarea,[contenteditable="true"]')) return;
   if ($('#reader').classList.contains('hidden')) return;
   if (e.key === 'Escape') { closeReader(); return; }
+  if (isPagedMode() && ['ArrowRight','ArrowLeft','PageDown','PageUp','Home','End'].includes(e.key)) e.preventDefault();
   if (isPagedMode() && e.key === 'ArrowRight') setPage(state.direction === 'rtl' ? prevPageIndex() : nextPageIndex());
   if (isPagedMode() && e.key === 'ArrowLeft') setPage(state.direction === 'rtl' ? nextPageIndex() : prevPageIndex());
   if (isPagedMode() && e.key === 'PageDown') setPage(nextPageIndex());
@@ -1881,7 +1908,7 @@ $('#readerBody').addEventListener('touchend', e => {
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.2.5', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.3.0', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
