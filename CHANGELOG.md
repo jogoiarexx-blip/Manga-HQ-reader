@@ -1,3 +1,10 @@
+## 2.2.4 — Cache forçado e catálogo corrigido
+
+- Prioriza o catálogo publicado sobre dados antigos salvos no navegador.
+- Evita que versões antigas sem `drivePages` sobrescrevam a Biblioteca 5 corrigida.
+- Adiciona cache-busting em `config.js` e `app.js` para forçar o navegador a carregar o código novo.
+- Renova o cache PWA para v2.2.4.
+
 ## 2.2.3 — Correção da abertura das páginas WebP
 
 - Corrige o caso em que a capa do Drive aparecia, mas as páginas da HQ não abriam.
