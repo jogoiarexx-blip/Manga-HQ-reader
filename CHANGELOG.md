@@ -1,3 +1,16 @@
+## 2.3.1 — PC e celular validados
+
+- Corrige overflow horizontal detectado em desktop 1440×900.
+- Mantém o menu de controles aberto no celular enquanto o usuário altera modo, direção e demais ajustes.
+- Renova automaticamente o tempo do painel móvel enquanto os controles estão sendo usados.
+- Leitura WebP do Drive passa a priorizar a Drive API quando uma API Key estiver configurada.
+- Sem chave, o leitor tenta múltiplos endpoints públicos do Google antes de informar falha.
+- Melhora a mensagem de erro quando o Drive bloqueia uma página e oferece acesso direto às configurações.
+- Corrige limpeza de cache/Blob ao tentar novamente uma página.
+- Testes E2E automatizados foram executados em desktop 1440×900 e Pixel 7.
+- Validação estática e teste E2E concluíram com sucesso antes deste fechamento.
+- Atualiza cache PWA e cache-busting de CSS, config e JavaScript.
+
 ## 2.3.0 — Robustez do leitor e validação
 
 - Corrige e reforça a navegação em página dupla, mantendo a capa isolada e pares consistentes.
