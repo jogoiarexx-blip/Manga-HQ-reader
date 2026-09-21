@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
   <meta name="description" content="Leitor de mangás e HQs em PDF, CBR e CBZ conectado a uma biblioteca do Google Drive." />
-  <title>Manga HQ Reader v1.7.0</title>
+  <title>Manga HQ Reader v2.1.0</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-64.png" type="image/png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
@@ -35,6 +35,7 @@
           <button class="nav" data-filter="reading">▶ <span>Continuar lendo</span></button>
           <button class="nav" data-filter="collections">▤ <span>Coleções</span></button>
           <button class="nav" data-filter="favorites">★ <span>Favoritos</span></button>
+          <button class="nav" data-filter="bookmarks">🔖 <span>Marcadores</span></button>
           <button class="nav" data-filter="completed">✓ <span>Lidos</span></button>
           <button class="nav" data-filter="offline">⇩ <span>Offline</span></button>
           <button class="nav" data-filter="new">✦ <span>Novos</span></button>
@@ -50,10 +51,10 @@
       <section class="content">
         <div class="hero">
           <div class="hero-copy">
-            <span class="eyebrow">DUAS BIBLIOTECAS • UM LEITOR</span>
+            <span class="eyebrow">QUATRO BIBLIOTECAS • UM LEITOR</span>
             <h1>Mangás e HQs em um leitor só.</h1>
-            <p>Feito para GitHub Pages: três bibliotecas do Google Drive, fonte externa Batcaverna, PDF, CBR e CBZ, favoritos, progresso, downloads e leitura offline.</p>
-            <div class="hero-tags"><span>PDF</span><span>CBR & CBZ</span><span>Progresso automático</span><span>Leitura offline</span></div>
+            <p>Feito para GitHub Pages: quatro bibliotecas do Google Drive, fonte externa Batcaverna, categorias separadas, carrossel de destaques, PDF, CBR e CBZ, favoritos, progresso, downloads e leitura offline.</p>
+            <div class="hero-tags"><span>PDF</span><span>CBR / CBZ / RAR / ZIP</span><span>RTL inteligente</span><span>Progresso automático</span><span>Leitura offline</span></div>
           </div>
           <div class="stats">
             <div><b id="itemCount">0</b><span>arquivos</span></div>
@@ -75,6 +76,27 @@
           <div id="continueRail" class="continue-rail"></div>
         </section>
 
+        <section id="featuredSection" class="featured-section">
+          <div class="section-head">
+            <div><span class="eyebrow">DESTAQUES</span><h2>Carrossel de coleções</h2></div>
+            <div class="carousel-actions">
+              <button id="carouselPrevBtn" class="ghost small" aria-label="Voltar no carrossel">‹</button>
+              <button id="carouselNextBtn" class="ghost small" aria-label="Avançar no carrossel">›</button>
+            </div>
+          </div>
+          <div id="featuredCarousel" class="featured-carousel"></div>
+        </section>
+
+        <section id="categoriesSection" class="categories-section">
+          <div class="section-head">
+            <div><span class="eyebrow">CATEGORIAS</span><h2>Explore por universo</h2></div>
+            <button id="clearCategoryBtn" class="ghost small hidden">Limpar categoria</button>
+          </div>
+          <div id="categoryChips" class="category-chips"></div>
+        </section>
+
+        <section id="universeRails" class="universe-rails"></section>
+
         <div id="collectionBar" class="collection-bar hidden"><button id="backCollectionsBtn" class="ghost">← Coleções</button><strong id="collectionTitle"></strong><span id="collectionMeta"></span></div>
 
         <div class="toolbar">
@@ -84,6 +106,7 @@
             <option value="library-1">Biblioteca 1</option>
             <option value="library-2">Biblioteca 2</option>
             <option value="library-3">Biblioteca 3 — Batman</option>
+            <option value="library-4">Biblioteca 4 — Novidades</option>
             <option value="offline">Offline/local</option>
           </select>
           <select id="sortSelect" aria-label="Ordenar biblioteca">
@@ -116,7 +139,12 @@
         <button id="modeBtn" class="ghost" title="Alternar modo de leitura">Modo: Página</button>
         <button id="autoScrollBtn" class="ghost hidden" title="Rolagem automática">▶ Auto</button>
         <button id="directionBtn" class="ghost" title="Direção da leitura">Leitura: →</button>
-        <button id="fitBtn" class="ghost">Ajustar</button>
+        <button id="fitBtn" class="ghost" title="Alternar ajuste">Ajuste: Página</button>
+        <button id="thumbsBtn" class="ghost" title="Miniaturas das páginas">▦ Miniaturas</button>
+        <button id="trimBtn" class="ghost" title="Corte leve de margens">✂ Margens</button>
+        <button id="bookmarkBtn" class="ghost" title="Marcar esta página">☆ Marcador</button>
+        <button id="displayBtn" class="ghost" title="Ajustes visuais">Aa Visual</button>
+        <button id="immersiveBtn" class="ghost" title="Modo imersivo">◫ Imersivo</button>
         <div id="zoomControls" class="zoom-controls">
           <button id="zoomOutBtn" class="icon-btn" title="Diminuir zoom">−</button>
           <button id="zoomLabel" class="zoom-label" title="Restaurar zoom">100%</button>
@@ -125,11 +153,23 @@
         <button id="fullscreenBtn" class="icon-btn" title="Tela cheia">⛶</button>
       </div>
     </div>
+    <div id="readerDisplayPanel" class="reader-display-panel hidden" aria-label="Ajustes visuais de leitura">
+      <div class="reader-display-head"><strong>Ajustes visuais</strong><button id="closeDisplayBtn" class="icon-btn" aria-label="Fechar ajustes visuais">×</button></div>
+      <label><span>Brilho <b id="brightnessValue">100%</b></span><input id="brightnessRange" type="range" min="60" max="140" value="100" /></label>
+      <label><span>Contraste <b id="contrastValue">100%</b></span><input id="contrastRange" type="range" min="60" max="170" value="100" /></label>
+      <label><span>Sépia <b id="sepiaValue">0%</b></span><input id="sepiaRange" type="range" min="0" max="80" value="0" /></label>
+      <div class="reader-display-actions"><button id="nightProfileBtn" class="ghost">☾ Perfil noturno</button><button id="resetDisplayBtn" class="ghost">↺ Restaurar</button></div>
+    </div>
+    <aside id="thumbDrawer" class="thumb-drawer hidden" aria-label="Miniaturas das páginas">
+      <div class="thumb-drawer-head"><strong>Páginas</strong><button id="closeThumbsBtn" class="icon-btn" aria-label="Fechar miniaturas">×</button></div>
+      <div id="thumbGrid" class="thumb-grid"></div>
+    </aside>
     <div id="readerBody" class="reader-body"></div>
     <div id="readerFooter" class="reader-footer hidden">
       <button id="prevPage">‹</button>
       <input id="pageRange" type="range" min="1" max="1" value="1" />
       <label class="page-jump" title="Ir para página"><input id="pageNumberInput" type="number" min="1" value="1" inputmode="numeric" aria-label="Ir para página" /><span id="pageLabel">1 / 1</span></label>
+      <button id="bookmarkJumpBtn" class="bookmark-jump" title="Ir para o próximo marcador">☆ 0</button>
       <button id="nextPage">›</button>
       <button id="nextIssueBtn" class="next-issue hidden">Próxima edição →</button>
     </div>
@@ -156,6 +196,14 @@
           <div><strong>Conexão com Google Drive</strong><small id="driveHealthText">Aguardando teste…</small></div>
           <button id="testDriveBtn" class="secondary-btn">Testar conexão</button>
         </div>
+        <div id="syncProgressBox" class="sync-progress-box hidden">
+          <div class="sync-progress-head"><strong>Sincronização</strong><button id="cancelSyncBtn" class="secondary-btn">Cancelar</button></div>
+          <div id="syncProgressRows" class="sync-progress-rows"></div>
+        </div>
+        <div class="diagnostics-box">
+          <div class="diagnostics-head"><div><strong>Diagnóstico do leitor</strong><small>Verifique compatibilidade, PWA, armazenamento e motores.</small></div><button id="runDiagnosticsBtn" class="secondary-btn">Executar</button></div>
+          <div id="diagnosticsResults" class="diagnostics-results"><span>Ainda não executado.</span></div>
+        </div>
         <details class="drive-help">
           <summary>Como ler os arquivos do Drive no app?</summary>
           <ol>
@@ -177,7 +225,7 @@
 
   <div id="driveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <div class="modal-card compact">
-      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Duas bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
+      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Três bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
       <div class="modal-body"><div id="driveSummary" class="drive-summary"></div><div id="driveRoots" class="drive-roots"></div><div id="externalSources" class="external-sources"></div></div>
     </div>
   </div>
