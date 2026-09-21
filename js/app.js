@@ -2,7 +2,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
-  appVersion: '2.2.4',
+  appVersion: '2.2.5',
   folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', '1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', '1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
   folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', 'https://drive.google.com/drive/folders/1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', 'https://drive.google.com/drive/folders/1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
   folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
@@ -1881,7 +1881,7 @@ $('#readerBody').addEventListener('touchend', e => {
 }, { passive: true });
 
 function exportReaderData() {
-  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.2.4', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
+  const data = { app: 'Manga HQ Reader', version: CONFIG.appVersion || '2.2.5', exportedAt: new Date().toISOString(), favorites: [...favorites], progress, prefs, bookmarks, displayPrefs, itemReaderPrefs };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'manga-hq-reader-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
