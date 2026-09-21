@@ -1,3 +1,14 @@
+## 2.2.0 — Leitura direta de pastas WebP no Google Drive
+
+- Detecta automaticamente pastas de HQ com páginas numeradas em WebP/JPG/PNG.
+- Reconhece `manifest.json` por edição e `series.json` na pasta da coleção.
+- Cria uma entrada por edição e usa a primeira página/capa definida no manifesto.
+- Carrega somente a página necessária pela Google Drive API, evitando baixar o CBR/CBZ inteiro.
+- Mantém modos Página, Dupla, Vertical e Webtoon, progresso, marcadores, miniaturas e pré-carregamento.
+- Agrupa edições pela série definida em `series.json`.
+- CBR/CBZ/RAR/ZIP e PDF continuam funcionando como formatos legados/alternativos.
+- Interface e cache PWA atualizados para a versão 2.2.0.
+
 # v2.1.0 — Biblioteca 4 e novos acervos
 
 - adiciona a Biblioteca 4 a partir da pasta de novidades do Google Drive;
