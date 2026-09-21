@@ -1,0 +1,177 @@
+ ? (b.size || 0) - (a.size || 0)
+    : state.sort === 'recent' ? (progress[b.id]?.updated || 0) - (progress[a.id]?.updated || 0)
+    : state.sort === 'modified' ? String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || ''))
+    : naturalSort(a.name, b.name));
+  return arr;
+}
+function renderBookmarksLibrary() {
+  const rows = state.items.filter(item => Array.isArray(bookmarks[item.id]) && bookmarks[item.id].length && (state.source==='all' || sourceKeyFor(item)===state.source) && (!state.category || categoryKeyFor(item)===state.category));
+  $('#emptyState').classList.toggle('hidden', rows.length > 0);
+  $('#libraryGrid').innerHTML = rows.map(item => {
+    const pages=[...new Set(bookmarks[item.id].map(Number).filter(Number.isFinite))].sort((a,b)=>a-b);
+    return `<article class="bookmark-card card" data-id="${escapeHtml(item.id)}"><div class="bookmark-card-main"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(sourceLabelFor(item))} • ${pages.length} marcador(es)</small><div class="bookmark-pages">${pages.slice(0,18).map(pg=>`<button data-bookmark-open="${escapeHtml(item.id)}" data-bookmark-page="${pg}">p. ${pg+1}</button>`).join('')}${pages.length>18?`<span>+${pages.length-18}</span>`:''}</div></div><button data-action="read">Abrir HQ</button></article>`;
+  }).join('');
+}
+function renderCollections() {
+  const groups = collectionGroups(currentPool()).filter(g => !state.search || normalizeText(g.label).includes(state.search));
+  $('#emptyState').classList.toggle('hidden', groups.length > 0);
+  $('#libraryGrid').innerHTML = groups.map(g => {
+    const reading = g.items.filter(i => percentFor(i) > 0 && percentFor(i) < 100).length;
+    const done = g.items.filter(i => percentFor(i) >= 100).length;
+    return `<article class="collection-card" data-collection="${escapeHtml(g.key)}"><div class="collection-cover"><strong>${escapeHtml(g.label)}</strong></div><div><div class="title">${escapeHtml(g.label)}</div><div class="collection-meta"><span>${g.items.length} ${g.items.length === 1 ? 'arquivo' : 'arquivos'}</span><span>${done} lidos${reading ? ` • ${reading} lendo` : ''}</span></div></div><button data-open-collection="${escapeHtml(g.key)}">Abrir coleção</button></article>`;
+  }).join('');
+}
+function updateLibraryStats() {
+  const ids = new Set(state.items.map(item => item.id));
+  const readingTotal = state.items.filter(item => {
+    const p = progress[item.id]; return p && p.percent > 0 && p.percent < 100;
+  }).length;
+  const completedTotal = state.items.filter(item => (progress[item.id]?.percent || 0) >= 100).length;
+  const favoriteTotal = [...favorites].filter(id => ids.has(id)).length;
+  $('#itemCount').textContent = state.items.length;
+  $('#favoriteCount').textContent = favoriteTotal;
+  $('#readingCount').textContent = readingTotal;
+  $('#completedCount').textContent = completedTotal;
+  updateOfflineStorageInfo();
+}
+function render() {
+  updateLibraryStats();
+  renderContinueRail();
+  renderFeaturedCarousel();
+  renderCategoryChips();
+  renderUniverseRails();
+  const group = state.collection ? collectionGroups(currentPool()).find(g => g.key === state.collection) : null;
+  $('#collectionBar').classList.toggle('hidden', !group);
+  if (group) { $('#collectionTitle').textContent = group.label; $('#collectionMeta').textContent = `${group.items.length} arquivos`; }
+  if (state.filter === 'collections' && !state.collection) return renderCollections();
+  if (state.filter === 'bookmarks' && !state.collection) return renderBookmarksLibrary();
+  const arr = filtered();
+  $('#emptyState').classList.toggle('hidden', arr.length > 0);
+  const visible = arr.slice(0, state.renderLimit);
+  $('#libraryGrid').innerHTML = visible.map(itemCard).join('');
+  const more = $('#loadMoreBtn');
+  if (more) {
+    const left = Math.max(0, arr.length - visible.length);
+    more.classList.toggle('hidden', left <= 0);
+    more.textContent = left > 0 ? `Carregar mais (${left} restantes)` : 'Carregar mais';
+  }
+}
+
+function setReaderButtons(type) {
+  const readable = type === 'comic' || type === 'pdf';
+  $('#modeBtn').classList.toggle('hidden', !readable);
+  $('#directionBtn').classList.toggle('hidden', !readable);
+  $('#fitBtn').classList.toggle('hidden', !readable);
+  $('#zoomControls').classList.toggle('hidden', !readable);
+  $('#readerFooter').classList.add('hidden');
+  updateCompleteButton();
+}
+
+function updateOfflineCurrentButton() {
+  const btn = $('#offlineCurrentBtn'); if (!btn || !state.current) return;
+  const id = state.current.offlineOriginId || state.current.id;
+  const saved = state.offlineIds.has(id);
+  btn.textContent = saved ? '✓ Offline' : '☁ Salvar offline';
+  btn.classList.toggle('is-offline', saved);
+  btn.title = saved ? 'Remover arquivo da biblioteca offline' : 'Salvar para ler sem internet';
+}
+
+function updateCompleteButton() {
+  const done = Boolean(state.current && (progress[state.current.id]?.percent || 0) >= 100);
+  $('#completeBtn').textContent = done ? '↶ Marcar não lido' : '✓ Marcar lido';
+  $('#completeBtn').classList.toggle('is-complete', done);
+}
+
+function modeLabel(mode = state.mode) {
+  return ({ page:'Página', spread:'Dupla', vertical:'Vertical', webtoon:'Webtoon' })[mode] || 'Página';
+}
+function modeIcon(mode = state.mode) {
+  return ({ page:'▣', spread:'▥', vertical:'↕', webtoon:'▤' })[mode] || '▣';
+}
+function isVerticalMode(mode = state.mode) { return mode === 'vertical' || mode === 'webtoon'; }
+function isPagedMode(mode = state.mode) { return mode === 'page' || mode === 'spread'; }
+function spreadIndexes(page = state.page) {
+  if (effectiveMode() !== 'spread') return [Math.max(0, page)];
+  // Capa sozinha; depois disso, exibe duas páginas lado a lado.
+  if (page <= 0) return [0];
+  return [page, page + 1].filter(i => i >= 0 && i < state.pages.length);
+}
+function nextPageIndex(page = state.page) {
+  if (effectiveMode() !== 'spread') return page + 1;
+  return page <= 0 ? 1 : page + 2;
+}
+function prevPageIndex(page = state.page) {
+  if (effectiveMode() !== 'spread') return page - 1;
+  return page <= 2 ? 0 : page - 2;
+}
+function pageStep() { return effectiveMode() === 'spread' ? (state.page <= 0 ? 1 : 2) : 1; }
+function normalizedMode(mode) { return ['page','spread','vertical','webtoon'].includes(mode) ? mode : 'page'; }
+function effectiveMode(mode = state.mode) {
+  if (mode === 'spread' && matchMedia('(max-width: 650px)').matches && !matchMedia('(orientation: landscape)').matches) return 'page';
+  return mode;
+}
+function updateReaderPrefsUI() {
+  $('#directionBtn').textContent = `Leitura: ${state.direction === 'rtl' ? '←' : '→'}`;
+  $('#directionBtn').dataset.arrow = state.direction === 'rtl' ? '←' : '→';
+  $('#modeBtn').textContent = `Modo: ${modeLabel(state.mode)}`;
+  $('#modeBtn').dataset.short = modeIcon(state.mode);
+  $('#zoomLabel').textContent = `${Math.round(state.zoom * 100)}%`;
+  if ($('#fitBtn')) $('#fitBtn').textContent = `Ajuste: ${{contain:'Página',width:'Largura',height:'Altura'}[state.fit] || 'Página'}`;
+  $('#trimBtn')?.classList.toggle('active', Boolean(state.trimMargins));
+  updateBookmarkButton();
+  $('#zoomControls').classList.toggle('hidden', !isPagedMode() || !['comic','pdf'].includes(extType(state.current || {})));
+  const auto = $('#autoScrollBtn');
+  if (auto) {
+    auto.classList.toggle('hidden', !isVerticalMode());
+    auto.textContent = state.autoScrollId ? '⏸ Auto' : '▶ Auto';
+    auto.title = state.autoScrollId ? 'Pausar rolagem automática' : 'Iniciar rolagem automática';
+  }
+}
+
+async function openItem(item, forceLarge = false) {
+  item = await ensureOfflineItem(item);
+  const type = extType(item);
+  const warningLimit = archiveWarningLimitMB();
+  if (type === 'comic' && !forceLarge && item.size > warningLimit * 1024 * 1024) {
+    state.largePending = item;
+    $('#largeFileMeta').textContent = `${item.name} • ${bytes(item.size)} • limite recomendado neste aparelho: ${warningLimit} MB`;
+    $('#largeFileModal').classList.remove('hidden');
+    return;
+  }
+  const token = ++state.openToken;
+  await cleanupReaderData();
+  if (token !== state.openToken) return;
+  state.current = item;
+  const savedReader = itemReaderPrefs[item.id] || {};
+  state.page = progress[item.id]?.page || 0;
+  state.mode = normalizedMode(progress[item.id]?.mode || savedReader.mode || prefs.defaultMode);
+  state.direction = progress[item.id]?.direction || savedReader.direction || prefs.direction || 'ltr';
+  state.fit = ['contain','width','height'].includes(savedReader.fit) ? savedReader.fit : 'contain';
+  state.trimMargins = Boolean(savedReader.trimMargins);
+  state.zoom = 1;
+  $('#reader')?.classList.toggle('trim-margins', state.trimMargins);
+  $('#reader').classList.remove('hidden'); $('#reader').setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  $('#readerTitle').textContent = item.name; $('#readerMeta').textContent = `${bytes(item.size)}${item.offline ? ' • OFFLINE' : ''}`;
+  updateOfflineCurrentButton();
+  setReaderButtons(type);
+  updateReaderPrefsUI();
+  if (type === 'pdf') return openPdf(item, token);
+  if (type === 'comic') return openComic(item, token);
+  if (token === state.openToken) showReaderError('Formato não suportado', 'Este arquivo não é PDF, CBR, CBZ, RAR ou ZIP.');
+}
+
+async function loadPdfJs() {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = import(LOCAL_RUNTIME_URLS.pdf).catch(() => import('https://esm.sh/pdfjs-dist@6.3.289/build/pdf.mjs')).then(async pdfjs => {
+      let localWorker = false; try { const r=await fetch(LOCAL_RUNTIME_URLS.pdfWorker,{method:'HEAD'}); localWorker=r.ok; } catch {}
+      pdfjs.GlobalWorkerOptions.workerSrc = localWorker ? LOCAL_RUNTIME_URLS.pdfWorker : 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.mjs'; return pdfjs;
+    });
+  }
+  return pdfjsModulePromise;
+}
+
+async function openPdf(item, token) {
+  if (token !== state.openToken) return;
+  $('#readerLoading').classList.remove('hidden');
+  $('#loadingText').textContent = item.localFile ? 'Preparando PDF offline…' : 'Abrindo PDF
