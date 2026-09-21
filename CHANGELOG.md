@@ -1,11 +1,42 @@
-# v1.7.0
+# v2.1.0 — Biblioteca 4 e novos acervos
 
-- Adicionada Biblioteca 3 com o novo acervo do Batman (`1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw`).
-- Sincronização Drive passa a percorrer 3 bibliotecas recursivamente.
-- Novo filtro Biblioteca 3 — Batman.
-- Contadores, teste de conexão e modal de fontes agora são dinâmicos para múltiplas bibliotecas.
-- Cache/PWA atualizado para v1.7.0.
-- Snapshot estático permanece com 230 itens conhecidos das Bibliotecas 1 e 2; a Biblioteca 3 é carregada via Drive API.
+- adiciona a Biblioteca 4 a partir da pasta de novidades do Google Drive;
+- incorpora 102 arquivos inéditos ao catálogo estático, sem duplicar nomes/IDs existentes;
+- remove duplicata interna de Hulk Vermelho #7;
+- adiciona categorias para Sonic, Spawn, Godzilla/Power Rangers, Wolverine, Vingadores, Quarteto Fantástico, Hulk, Homem de Ferro, Homem-Aranha, Doutor Estranho, Thunderbolts, X-Factor/NYX e Tempestade;
+- catálogo estático passa de 230 para 332 itens.
+
+# Changelog
+
+## v2.1.0
+- Sincronização do Drive separada por biblioteca, com progresso, cancelamento e tolerância a falha parcial.
+- Miniaturas de páginas e salto direto pelo navegador de páginas.
+- Preferências de leitura por arquivo: modo, direção, ajuste e corte de margens.
+- Ajustes Página, Largura e Altura.
+- Corte leve de margens para aproveitar melhor a tela.
+- PDF protegido por senha com prompt de senha.
+- Tentativa de senha em arquivos RAR/CBR criptografados.
+- Modo de memória reduzida automático para quadrinhos compactados muito grandes.
+- Filtros de fonte/categoria aplicados também a Coleções, Continuar lendo e Destaques.
+- Trilhos por universo na página inicial.
+- Diagnóstico integrado de PWA, armazenamento e motores do leitor.
+- Ícones PWA com suporte maskable.
+- Preferência por runtimes locais em vendor/ com fallback para CDN/cache.
+- Backup/restauração inclui preferências por arquivo.
+
+# v2.1.0
+
+- Leitor de mangá/HQ reforçado para PDF, CBR, CBZ, RAR e ZIP.
+- Detecção automática do formato real por assinatura binária: arquivos CBR/CBZ renomeados incorretamente podem abrir pelo motor correto.
+- Fallback automático entre ZIP e RAR quando a extensão não corresponde ao conteúdo.
+- Página dupla inteligente: a capa fica sozinha e as páginas seguintes usam pares.
+- RTL/mangá preservado no modo de página dupla.
+- Recuperação por página: uma imagem corrompida ou incompatível não precisa derrubar o leitor inteiro.
+- Botão para tentar novamente páginas que falharam.
+- Pinch-to-zoom no celular e novos atalhos PageUp/PageDown/Home/End no PC.
+- Re-renderização adaptativa ao girar/redimensionar a tela.
+- Melhor suporte a imagens WebP/AVIF/JPEG/PNG/GIF/BMP/JFIF/ICO dentro de arquivos compactados.
+- Cache/PWA atualizado para v2.1.0.
 
 # v1.6.0
 
