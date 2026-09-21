@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
   <meta name="description" content="Leitor de mangás e HQs em PDF, CBR, CBZ e pastas WebP conectado a bibliotecas do Google Drive." />
-  <title>Manga HQ Reader v2.2.0</title>
+  <title>Manga HQ Reader v2.2.1</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-64.png" type="image/png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
@@ -51,9 +51,9 @@
       <section class="content">
         <div class="hero">
           <div class="hero-copy">
-            <span class="eyebrow">QUATRO BIBLIOTECAS • UM LEITOR</span>
+            <span class="eyebrow">CINCO BIBLIOTECAS • UM LEITOR</span>
             <h1>Mangás e HQs em um leitor só.</h1>
-            <p>Feito para GitHub Pages: quatro bibliotecas do Google Drive, fonte externa Batcaverna, categorias separadas, carrossel de destaques, PDF, CBR/CBZ e HQs em páginas WebP carregadas diretamente do Drive.</p>
+            <p>Feito para GitHub Pages: cinco bibliotecas do Google Drive, fonte externa Batcaverna, categorias separadas, carrossel de destaques, PDF, CBR/CBZ e HQs em páginas WebP carregadas diretamente do Drive.</p>
             <div class="hero-tags"><span>PDF</span><span>CBR / CBZ / RAR / ZIP</span><span>WebP direto do Drive</span><span>RTL inteligente</span><span>Progresso automático</span></div>
           </div>
           <div class="stats">
@@ -107,6 +107,7 @@
             <option value="library-2">Biblioteca 2</option>
             <option value="library-3">Biblioteca 3 — Batman</option>
             <option value="library-4">Biblioteca 4 — Novidades</option>
+            <option value="library-5">Biblioteca 5 — Godzilla vs Power Rangers</option>
             <option value="offline">Offline/local</option>
           </select>
           <select id="sortSelect" aria-label="Ordenar biblioteca">
@@ -225,7 +226,7 @@
 
   <div id="driveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <div class="modal-card compact">
-      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Quatro bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
+      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Cinco bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
       <div class="modal-body"><div id="driveSummary" class="drive-summary"></div><div id="driveRoots" class="drive-roots"></div><div id="externalSources" class="external-sources"></div></div>
     </div>
   </div>
