@@ -1,0 +1,37 @@
+name: Testar PC e celular
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Iniciar site local
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/mhqr-http.log 2>&1 &
+          echo $! > /tmp/mhqr-http.pid
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/mhqr-http.log
+          exit 1
+      - name: Testar desktop e Pixel 7
+        run: node tests/e2e.mjs
