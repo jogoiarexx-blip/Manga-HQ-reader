@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
-  <meta name="description" content="Leitor de mangás e HQs em PDF, CBR e CBZ conectado a uma biblioteca do Google Drive." />
-  <title>Manga HQ Reader v2.1.0</title>
+  <meta name="description" content="Leitor de mangás e HQs em PDF, CBR, CBZ e pastas WebP conectado a bibliotecas do Google Drive." />
+  <title>Manga HQ Reader v2.2.0</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-64.png" type="image/png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
@@ -53,8 +53,8 @@
           <div class="hero-copy">
             <span class="eyebrow">QUATRO BIBLIOTECAS • UM LEITOR</span>
             <h1>Mangás e HQs em um leitor só.</h1>
-            <p>Feito para GitHub Pages: quatro bibliotecas do Google Drive, fonte externa Batcaverna, categorias separadas, carrossel de destaques, PDF, CBR e CBZ, favoritos, progresso, downloads e leitura offline.</p>
-            <div class="hero-tags"><span>PDF</span><span>CBR / CBZ / RAR / ZIP</span><span>RTL inteligente</span><span>Progresso automático</span><span>Leitura offline</span></div>
+            <p>Feito para GitHub Pages: quatro bibliotecas do Google Drive, fonte externa Batcaverna, categorias separadas, carrossel de destaques, PDF, CBR/CBZ e HQs em páginas WebP carregadas diretamente do Drive.</p>
+            <div class="hero-tags"><span>PDF</span><span>CBR / CBZ / RAR / ZIP</span><span>WebP direto do Drive</span><span>RTL inteligente</span><span>Progresso automático</span></div>
           </div>
           <div class="stats">
             <div><b id="itemCount">0</b><span>arquivos</span></div>
@@ -67,7 +67,7 @@
         <div id="catalogNotice" class="catalog-notice hidden"><strong>Catálogo local</strong><span id="catalogNoticeText"></span></div>
 
         <div id="apiNotice" class="notice hidden">
-          <div><strong>Leitura CBR/CBZ direto do Drive</strong><span>Configure uma chave da Google Drive API para sincronizar e abrir PDF/CBR/CBZ no leitor próprio, com progresso real por página.</span></div>
+          <div><strong>Leitura direta pelo Google Drive</strong><span>Configure uma chave da Google Drive API. Pastas com manifest.json e páginas WebP são abertas página a página, sem baixar o quadrinho inteiro.</span></div>
           <button id="noticeSettingsBtn">Configurar</button>
         </div>
 
@@ -185,7 +185,7 @@
       <div class="modal-head"><div><strong id="settingsTitle">Configurações do Drive</strong><small>GitHub Pages • sem servidor</small></div><button id="closeSettings" class="icon-btn">×</button></div>
       <div class="modal-body">
         <label class="field"><span>Google Drive API Key</span><input id="apiKeyInput" type="password" autocomplete="off" placeholder="Cole sua chave aqui" /></label>
-        <p class="help">A pasta pública já está configurada. A chave permite listar novos arquivos e baixar CBR/CBZ diretamente no navegador. Restrinja a chave ao endereço do seu GitHub Pages e habilite somente a Google Drive API.</p>
+        <p class="help">As pastas públicas já estão configuradas. A chave permite sincronizar o acervo e ler pastas de páginas WebP diretamente no navegador. Restrinja a chave ao endereço do seu GitHub Pages e habilite somente a Google Drive API.</p>
         <div class="settings-grid">
           <label class="field"><span>Modo padrão</span><select id="defaultModeSelect"><option value="page">Página única</option><option value="spread">Página dupla</option><option value="vertical">Vertical contínuo</option><option value="webtoon">Webtoon</option></select></label>
           <label class="field"><span>Direção padrão</span><select id="directionSelect"><option value="ltr">Esquerda → direita</option><option value="rtl">Direita → esquerda (mangá)</option></select></label>
@@ -211,7 +211,7 @@
             <li>Crie uma API Key no Google Cloud com a <b>Google Drive API</b> ativada.</li>
             <li>Restrinja a chave ao endereço do seu GitHub Pages e à Google Drive API.</li>
             <li>Cole a chave acima, toque em <b>Testar conexão</b> e depois em <b>Salvar e sincronizar</b>.</li>
-            <li>Na biblioteca, toque em <b>Ler agora</b>. PDF, CBR e CBZ abrem no leitor interno.</li>
+            <li>Na biblioteca, toque em <b>Ler agora</b>. Pastas com <b>manifest.json</b> + páginas WebP abrem página a página; PDF, CBR e CBZ continuam compatíveis.</li>
           </ol>
           <p>Arquivos privados exigem autenticação OAuth; uma API Key sozinha serve para conteúdo público.</p>
         </details>
@@ -225,7 +225,7 @@
 
   <div id="driveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <div class="modal-card compact">
-      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Três bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
+      <div class="modal-head"><div><strong id="driveTitle">Fontes da biblioteca</strong><small>Quatro bibliotecas próprias + fontes externas</small></div><button id="closeDriveModal" class="icon-btn">×</button></div>
       <div class="modal-body"><div id="driveSummary" class="drive-summary"></div><div id="driveRoots" class="drive-roots"></div><div id="externalSources" class="external-sources"></div></div>
     </div>
   </div>
