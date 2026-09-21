@@ -1,0 +1,172 @@
+ no leitor…';
+  $('#readerBody').innerHTML = '';
+  $('#readerFooter').classList.add('hidden');
+  try {
+    const pdfjs = await loadPdfJs();
+    if (token !== state.openToken) return;
+    const options = { disableAutoFetch: false, disableStream: false, disableRange: false };
+    if (item.localFile) {
+      options.data = await item.localFile.arrayBuffer();
+    } else {
+      const key = getApiKey();
+      if (key) {
+        const api = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(item.id)}`);
+        api.searchParams.set('alt', 'media'); api.searchParams.set('key', key);
+        options.url = api.href;
+        if (item.resourceKey) options.httpHeaders = { 'X-Goog-Drive-Resource-Keys': `${item.id}/${item.resourceKey}` };
+      } else {
+        // Tenta o endpoint público. Se o Drive bloquear CORS, mostramos um fallback claro.
+        options.url = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(item.id)}&export=download&confirm=t`;
+      }
+    }
+    const task = pdfjs.getDocument(options);
+    task.onPassword = (updatePassword, reason) => {
+      const label = reason === 2 ? 'Senha incorreta. Digite novamente a senha deste PDF:' : 'Este PDF é protegido. Digite a senha:';
+      const password = window.prompt(label);
+      if (password == null) { try { task.destroy?.(); } catch {} return; }
+      updatePassword(password);
+    };
+    state.pdfDoc = await task.promise;
+    if (token !== state.openToken) { await state.pdfDoc.destroy().catch(() => {}); state.pdfDoc = null; return; }
+    state.pages = Array.from({ length: state.pdfDoc.numPages }, (_, i) => ({ index: i, name: `Página ${i + 1}` }));
+    state.page = Math.max(0, Math.min(state.page, state.pages.length - 1));
+    $('#pageRange').max = state.pages.length;
+    $('#readerLoading').classList.add('hidden');
+    updateReaderPrefsUI();
+    await renderReaderPages();
+  } catch (err) {
+    if (token !== state.openToken || err?.name === 'AbortError') return;
+    $('#readerLoading').classList.add('hidden');
+    const noKeyHint = !item.localFile && !getApiKey() ? ' Configure a Google Drive API Key para usar o leitor PDF próprio com arquivos do Drive.' : '';
+    showReaderError('Não foi possível abrir este PDF', `${err.message || err}${noKeyHint}`, !item.localFile);
+  }
+}
+
+async function fetchArrayBufferWithProgress(url, headers = {}, signal, token) {
+  const r = await fetch(url, { mode: 'cors', headers, redirect: 'follow', signal });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    let msg = `HTTP ${r.status}`;
+    try { msg = JSON.parse(txt).error?.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  const ct = r.headers.get('content-type') || '';
+  if (ct.includes('text/html')) throw new Error('O Google Drive retornou uma página de confirmação em vez do arquivo.');
+  const total = Number(r.headers.get('content-length') || 0);
+  if (!r.body) return r.arrayBuffer();
+  const reader = r.body.getReader();
+  let received = 0; let target = total ? new Uint8Array(total) : null; let offset = 0; const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (signal?.aborted) throw new DOMException('Download cancelado.', 'AbortError');
+    received += value.byteLength;
+    if (target && offset + value.byteLength <= target.length) {
+      target.set(value, offset); offset += value.byteLength;
+    } else {
+      if (target) { chunks.push(target.slice(0, offset)); target = null; }
+      chunks.push(value);
+    }
+    if (token === state.openToken && !$('#reader').classList.contains('hidden')) {
+      $('#loadingText').textContent = total ? `Baixando… ${Math.min(100, Math.round(received / total * 100))}% (${bytes(received)} / ${bytes(total)})` : `Baixando… ${bytes(received)}`;
+    }
+  }
+  if (target) return target.slice(0, offset).buffer;
+  const all = new Uint8Array(received); let pos = 0;
+  for (const chunk of chunks) { all.set(chunk, pos); pos += chunk.byteLength; }
+  return all.buffer;
+}
+
+async function downloadDriveFile(item, token, purpose = 'reader') {
+  const key = getApiKey();
+  const attempts = [];
+  if (key) {
+    const api = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(item.id)}`);
+    api.searchParams.set('alt', 'media'); api.searchParams.set('key', key);
+    const headers = item.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${item.id}/${item.resourceKey}` } : {};
+    attempts.push({ url: api.href, headers, label: 'Drive API' });
+  }
+  attempts.push({ url: `https://drive.usercontent.google.com/download?id=${encodeURIComponent(item.id)}&export=download&confirm=t`, headers: {}, label: 'link público' });
+  const controller = new AbortController();
+  const offlineId = item.offlineOriginId || item.id;
+  if (purpose === 'reader') {
+    state.readerDownloadController?.abort();
+    state.readerDownloadController = controller;
+  } else {
+    state.offlineControllers.get(offlineId)?.abort();
+    state.offlineControllers.set(offlineId, controller);
+  }
+  let lastError = null;
+  try {
+    for (const a of attempts) {
+      try { return await fetchArrayBufferWithProgress(a.url, a.headers, controller.signal, token); }
+      catch (err) {
+        if (err?.name === 'AbortError') throw err;
+        lastError = new Error(`${a.label}: ${err.message}`);
+      }
+    }
+  } finally {
+    if (purpose === 'reader' && state.readerDownloadController === controller) state.readerDownloadController = null;
+    if (purpose !== 'reader' && state.offlineControllers.get(offlineId) === controller) state.offlineControllers.delete(offlineId);
+  }
+  if (!key) throw new Error('O navegador não conseguiu baixar este CBR/CBZ pelo link público por causa das restrições de CORS do Google Drive. Configure uma Google Drive API Key restrita ao seu GitHub Pages ou abra um arquivo local.');
+  throw lastError || new Error('Falha ao baixar do Google Drive.');
+}
+
+async function loadJsZip() {
+  if (!jszipModulePromise) jszipModulePromise = import(LOCAL_RUNTIME_URLS.zip).catch(() => import('https://esm.sh/jszip@3.10.1')).then(m => m.default || m);
+  return jszipModulePromise;
+}
+async function loadUnrar() {
+  if (!unrarModulePromise) unrarModulePromise = import(LOCAL_RUNTIME_URLS.unrar).catch(() => import('https://esm.sh/node-unrar-js@2.0.2?bundle'));
+  if (!unrarWasmPromise) unrarWasmPromise = fetch(LOCAL_RUNTIME_URLS.unrarWasm).then(r => { if (!r.ok) throw new Error('local unavailable'); return r.arrayBuffer(); }).catch(() => fetch('https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm').then(r => { if (!r.ok) throw new Error(`unrar.wasm HTTP ${r.status}`); return r.arrayBuffer(); }));
+  return Promise.all([unrarModulePromise, unrarWasmPromise]);
+}
+
+function archiveKindFromMagic(data) {
+  const b = data instanceof Uint8Array ? data : new Uint8Array(data || new ArrayBuffer(0));
+  if (b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && ((b[2] === 0x03 && b[3] === 0x04) || (b[2] === 0x05 && b[3] === 0x06) || (b[2] === 0x07 && b[3] === 0x08))) return 'zip';
+  if (b.length >= 7 && b[0] === 0x52 && b[1] === 0x61 && b[2] === 0x72 && b[3] === 0x21 && b[4] === 0x1a && b[5] === 0x07 && (b[6] === 0x00 || b[6] === 0x01)) return 'rar';
+  return '';
+}
+function archiveKindFromName(name) {
+  const ext = extension(name);
+  if (ext === '.cbz' || ext === '.zip') return 'zip';
+  if (ext === '.cbr' || ext === '.rar') return 'rar';
+  return '';
+}
+async function prepareZipArchive(data, token) {
+  const JSZip = await loadJsZip();
+  if (token !== state.openToken) return null;
+  const zip = await JSZip.loadAsync(data, { checkCRC32: false });
+  if (token !== state.openToken) return null;
+  const entries = Object.values(zip.files)
+    .filter(f => !f.dir && isImage(f.name))
+    .sort((a, b) => naturalSort(a.name.replace(/\\/g,'/'), b.name.replace(/\\/g,'/')));
+  if (!entries.length) throw new Error('Nenhuma imagem compatível foi encontrada dentro do CBZ/ZIP.');
+  return { archive: { type: 'zip', engine: zip, entries }, pages: entries.map((e, i) => ({ index: i, name: e.name })) };
+}
+async function prepareRarArchive(data, token, password = '') {
+  const [unrar, wasmBinary] = await loadUnrar();
+  if (token !== state.openToken) return null;
+  const extractor = await unrar.createExtractorFromData({ wasmBinary, data, ...(password ? { password } : {}) });
+  if (token !== state.openToken) return null;
+  const list = extractor.getFileList();
+  const allHeaders = [...list.fileHeaders];
+  const encryptedImages = allHeaders.filter(h => !h.flags.directory && h.flags.encrypted && isImage(h.name)).length;
+  const headers = allHeaders.filter(h => !h.flags.directory && !h.flags.encrypted && isImage(h.name)).sort((a, b) => naturalSort(a.name, b.name));
+  if (!headers.length && encryptedImages) { const pw=window.prompt('Este CBR/RAR está protegido por senha. Digite a senha:'); if (pw && !password) return prepareRarArchive(data, token, pw); throw new Error('As páginas deste CBR/RAR estão protegidas por senha ou a senha informada está incorreta.'); }
+  if (!headers.length) throw new Error('Nenhuma imagem compatível foi encontrada dentro do CBR/RAR.');
+  return { archive: { type: 'rar', engine: extractor, entries: headers }, pages: headers.map((e, i) => ({ index: i, name: e.name })) };
+}
+async function prepareArchive(item, data, token) {
+  if (token === state.openToken) $('#loadingText').textContent = 'Identificando formato e páginas…';
+  const magicKind = archiveKindFromMagic(data);
+  const namedKind = archiveKindFromName(item.name);
+  const primary = magicKind || namedKind;
+  if (magicKind && namedKind && magicKind !== namedKind) toast(`Formato real detectado: ${magicKind.toUpperCase()} (extensão ${extension(item.name).toUpperCase()}).`);
+  const tryKinds = [...new Set([primary, namedKind, magicKind, 'zip', 'rar'].filter(Boolean))];
+  let lastError = null;
+  for (const kind of tryKinds) {
+    try {
+      const result = kind === 'zip' ? await prepareZipArchive(data, token) : await prepareRarArchive(data, toke
