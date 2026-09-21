@@ -1,0 +1,164 @@
+), 1500);
+    toast('Download iniciado.');
+    return;
+  }
+  // Use navegação direta para o endpoint de download do Drive: o arquivo não precisa
+  // ser carregado inteiro na memória do celular, o que é importante para CBRs grandes.
+  const url = directDownloadUrl(item);
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.download = sanitizeFilename(item.name); a.style.display = 'none';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Download aberto pelo Google Drive.');
+}
+function archiveWarningLimitMB() {
+  const configured = Math.max(40, Number(CONFIG.largeArchiveWarningMB || 180));
+  const memory = Number(navigator.deviceMemory || 0);
+  if (memory && memory <= 2) return Math.min(configured, 70);
+  if (memory && memory <= 4) return Math.min(configured, 120);
+  return configured;
+}
+
+async function loadStaticCatalog() {
+  const partUrls = Array.from({length: 7}, (_, i) => `./data/parts/catalog-${String(i).padStart(2,'0')}.json`);
+  const responses = await Promise.all(partUrls.map(url => fetch(url, { cache: 'no-store' })));
+  const bad = responses.find(r => !r.ok);
+  if (bad) throw new Error(`Catálogo local: HTTP ${bad.status}`);
+  const groups = await Promise.all(responses.map(r => r.json()));
+  const bundled = uniqueItems(groups.flat());
+  const cached = readJson(LS.catalog, []);
+  return uniqueItems([...bundled, ...(Array.isArray(cached) ? cached : [])]);
+}
+function saveCatalogCache(items) {
+  const clean = uniqueItems(items).map(({ localFile, offline, ...item }) => item);
+  storageSet(LS.catalog, JSON.stringify(clean));
+}
+
+async function listDriveRoot(apiKey, rootId, index, signal, onProgress) {
+  const fields = 'nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink,resourceKey)';
+  const queue = [{ id: rootId, path: `Biblioteca ${index + 1}` }];
+  const seenFolders = new Set(); const items = []; let foldersDone = 0;
+  while (queue.length) {
+    if (signal?.aborted) throw new DOMException('Sincronização cancelada.', 'AbortError');
+    const folder = queue.shift(); if (!folder?.id || seenFolders.has(folder.id)) continue;
+    seenFolders.add(folder.id); let pageToken = '';
+    do {
+      const u = new URL('https://www.googleapis.com/drive/v3/files');
+      u.searchParams.set('q', `'${folder.id}' in parents and trashed = false`);
+      u.searchParams.set('fields', fields); u.searchParams.set('pageSize', '1000'); u.searchParams.set('orderBy', 'name_natural');
+      u.searchParams.set('supportsAllDrives', 'true'); u.searchParams.set('includeItemsFromAllDrives', 'true'); u.searchParams.set('key', apiKey);
+      if (pageToken) u.searchParams.set('pageToken', pageToken);
+      const r = await fetch(u, { mode:'cors', signal }); const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error?.message || `Drive API: HTTP ${r.status}`);
+      for (const file of (d.files || [])) {
+        if (file.mimeType === 'application/vnd.google-apps.folder') queue.push({ id:file.id, path:`${folder.path}/${file.name}` });
+        else if (/\.(pdf|cbr|cbz|rar|zip)$/i.test(file.name || '')) items.push({ ...file, folderPath:folder.path });
+      }
+      pageToken = d.nextPageToken || '';
+    } while (pageToken);
+    foldersDone++; onProgress?.({ index, foldersDone, queued:queue.length, items:items.length, state:'running' });
+  }
+  return uniqueItems(items);
+}
+function renderSyncProgress() {
+  const box=$('#syncProgressBox'), rows=$('#syncProgressRows'); if (!box || !rows) return;
+  const active = state.syncStatus.some(x => x?.state === 'running');
+  box.classList.toggle('hidden', !state.syncStatus.length);
+  rows.innerHTML = state.syncStatus.map((x,i) => `<div class="sync-row ${x?.state || ''}"><strong>Biblioteca ${i+1}</strong><span>${x?.state === 'ok' ? `✓ ${x.items||0} itens` : x?.state === 'error' ? `⚠ ${escapeHtml(x.error||'Falha')}` : x?.state === 'cancelled' ? 'Cancelada' : `${x?.items||0} itens • ${x?.foldersDone||0} pastas • ${x?.queued||0} na fila`}</span></div>`).join('');
+  $('#cancelSyncBtn')?.classList.toggle('hidden', !active);
+}
+async function syncDriveLibraries(apiKey) {
+  const roots = Array.isArray(CONFIG.folderIds) && CONFIG.folderIds.length ? CONFIG.folderIds : [CONFIG.folderId].filter(Boolean);
+  state.syncController?.abort(); state.syncController = new AbortController();
+  state.syncStatus = roots.map(() => ({ state:'running', items:0, foldersDone:0, queued:1 })); renderSyncProgress();
+  const previous = await loadStaticCatalog(); const byLibrary = new Map();
+  for (let i=0;i<roots.length;i++) {
+    try {
+      const items = await listDriveRoot(apiKey, roots[i], i, state.syncController.signal, info => { state.syncStatus[i] = info; renderSyncProgress(); });
+      byLibrary.set(i+1, items); state.syncStatus[i] = { state:'ok', items:items.length }; renderSyncProgress();
+    } catch (err) {
+      if (err?.name === 'AbortError') { state.syncStatus[i] = { state:'cancelled' }; for(let j=i+1;j<roots.length;j++) state.syncStatus[j]={state:'cancelled'}; renderSyncProgress(); break; }
+      state.syncStatus[i] = { state:'error', error:err.message }; renderSyncProgress();
+    }
+  }
+  const merged=[];
+  for (let i=1;i<=roots.length;i++) {
+    const ok=byLibrary.get(i);
+    if (ok?.length) merged.push(...ok);
+    else merged.push(...previous.filter(item => sourceKeyFor(item) === `library-${i}`));
+  }
+  merged.push(...previous.filter(item => !/^library-\d+$/.test(sourceKeyFor(item))));
+  return uniqueItems(merged);
+}
+async function loadLibrary() {
+  $('#refreshBtn').disabled = true; $('#syncStatus').textContent = 'Atualizando…';
+  const key = getApiKey(); $('#apiNotice').classList.toggle('hidden', Boolean(key));
+  try {
+    if (key) {
+      state.items = await syncDriveLibraries(key); saveCatalogCache(state.items);
+      const syncedCounts = libraryCounts(); storageSet(LS.syncMeta, JSON.stringify({ at:Date.now(), count:state.items.length, counts:syncedCounts }));
+      const failed=state.syncStatus.filter(x=>x?.state==='error').length;
+      $('#syncStatus').textContent = failed ? 'Sincronização parcial' : 'Sincronizado com Drive';
+      $('#syncDetail').textContent = `${state.items.length} arquivos • ${Array.from({length:(CONFIG.folderIds||[]).length},(_,i)=>`Biblioteca ${i+1}: ${syncedCounts[`library-${i+1}`]||0}`).join(' • ')}${failed ? ` • ${failed} biblioteca(s) usando cache` : ''}`;
+      $('#catalogNotice').classList.toggle('hidden', !failed); if (failed) $('#catalogNoticeText').textContent='Uma biblioteca falhou; as demais foram atualizadas e a que falhou manteve o último catálogo disponível.';
+    } else {
+      state.syncStatus=[]; renderSyncProgress();
+      state.items = await loadStaticCatalog(); const sm=readJson(LS.syncMeta,{}); const last=formatDateTime(sm.at);
+      $('#syncStatus').textContent = last ? 'Catálogo salvo ativo' : 'Catálogo local ativo';
+      $('#syncDetail').textContent = `${state.items.length} itens disponíveis${last ? ` • última sincronização: ${last}` : ' • configure a API para carregar todas as subpastas'}`;
+      $('#catalogNoticeText').textContent = 'Sem a API Key, o app mostra o catálogo incluído no ZIP. Com a API, ele percorre as quatro bibliotecas e todas as subpastas.'; $('#catalogNotice').classList.remove('hidden');
+    }
+  } catch (err) {
+    state.items = await loadStaticCatalog().catch(()=>[]); $('#syncStatus').textContent='Falha no catálogo'; $('#syncDetail').textContent=err.message; toast(`Falha ao carregar biblioteca: ${err.message}`);
+  } finally {
+    for (const meta of state.offlineMeta.values()) if (!state.items.some(x=>x.id===meta.id)) state.items.push({ ...meta });
+    state.items=uniqueItems(state.items); $('#refreshBtn').disabled=false; resetRenderLimit(); render();
+  }
+}
+
+function categoryKeywordMap() {
+  return [
+    ['Batman', ['batman', 'bruce wayne', 'gotham', 'coringa', 'asa noturna', 'batgirl', 'robin', 'arkham']],
+    ['Flash', ['flash', 'flashpoint']],
+    ['Superman', ['superman', 'homem de aço', 'mulher maravilha', 'smallville']],
+    ['Liga da Justiça', ['liga da justiça']],
+    ['X-Men', ['x-men', 'x men', 'vampira', 'gambit']],
+    ['Watchmen', ['watchmen']],
+    ['Senhor Destino', ['senhor destino']],
+    ['Motoqueiro Fantasma', ['motoqueiro fantasma', 'motoqueiros fantasmas', 'ghost rider', 'danny ketch']],
+    ['Dandadan', ['dandadan']],
+    ['Sucata Joe', ['sucata joe']],
+    ['Guerras Secretas', ['guerras secretas', 'secret wars']],
+    ['Sonic', ['sonic']],
+    ['Spawn', ['spawn']],
+    ['Godzilla / Power Rangers', ['godzilla', 'power rangers']],
+    ['Wolverine', ['wolverine']],
+    ['Vingadores', ['vingadores', 'avengers']],
+    ['Quarteto Fantástico', ['quarteto fantastico', 'fantastic four']],
+    ['Hulk', ['hulk']],
+    ['Homem de Ferro', ['homem de ferro', 'iron man']],
+    ['Homem-Aranha', ['homem aranha', 'aranha', 'spider man']],
+    ['Doutor Estranho', ['doutor estranho', 'doctor strange']],
+    ['Thunderbolts', ['thunderbolts']],
+    ['X-Factor / NYX', ['x-factor', 'x factor', 'nyx']],
+    ['Tempestade', ['tempestade']],
+    ['Destino Marvel', ['mundo nas maos do destino', 'divisao do destino', 'academia destino']]
+  ];
+}
+function categoryLabelFor(item) {
+  if (!item) return 'Outros';
+  if (sourceKeyFor(item) === 'library-3') return 'Batman';
+  const base = normalizeText(`${item.name || ''} ${item.folderPath || ''}`);
+  for (const [label, words] of categoryKeywordMap()) if (words.some(word => base.includes(normalizeText(word)))) return label;
+  const folder = cleanFolderLabel(item.folderPath || '');
+  return folder || 'Outros';
+}
+function categoryKeyFor(item) { return normalizeText(categoryLabelFor(item)); }
+function categoryGroups(items = state.items) {
+  const map = new Map();
+  for (const item of items) {
+    const key = categoryKeyFor(item), label = categoryLabelFor(item);
+    if (!map.has(key)) map.set(key, { key, label, items: [] });
+    map.get(key).items.push(item);
+  }
+  return [...map.values()].filter(g => g.items.le
