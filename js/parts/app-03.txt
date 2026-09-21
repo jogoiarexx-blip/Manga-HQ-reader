@@ -1,0 +1,137 @@
+ngth).sort((a,b) => b.items.length - a.items.length || naturalSort(a.label,b.label));
+}
+function sourcePool() { return state.items.filter(item => state.source === 'all' || sourceKeyFor(item) === state.source); }
+function currentPool() { return sourcePool().filter(item => !state.category || categoryKeyFor(item) === state.category); }
+function featuredCollections(items = currentPool()) {
+  return collectionGroups(items).map(g => ({ ...g, category:categoryLabelFor(g.items[0]) })).filter(g => g.items.length).sort((a,b)=>b.items.length-a.items.length || naturalSort(a.label,b.label)).slice(0,10);
+}
+function renderCategoryChips() {
+  const chipWrap=$('#categoryChips'); if (!chipWrap) return;
+  const base=sourcePool(); const groups=categoryGroups(base).slice(0,12);
+  chipWrap.innerHTML=[`<button class="chip ${!state.category?'active':''}" data-category="">Todos <span>${base.length}</span></button>`].concat(groups.map(g=>`<button class="chip ${state.category===g.key?'active':''}" data-category="${escapeHtml(g.key)}">${escapeHtml(g.label)} <span>${g.items.length}</span></button>`)).join('');
+  $('#clearCategoryBtn')?.classList.toggle('hidden',!state.category);
+}
+function renderFeaturedCarousel() {
+  const host=$('#featuredCarousel'); if(!host) return;
+  const list=featuredCollections();
+  host.innerHTML=list.map(g=>{ const lead=g.items[0],thumb=thumbUrl(lead),done=g.items.filter(i=>percentFor(i)>=100).length; return `<article class="featured-card" data-open-collection="${escapeHtml(g.key)}"><div class="featured-cover">${thumb?`<img src="${thumb}" alt="" loading="lazy" onerror="this.remove()">`:`<div class="featured-fallback">${escapeHtml(shortCover(g.label))}</div>`}<span class="featured-badge">${escapeHtml(g.category)}</span></div><div class="featured-body"><strong>${escapeHtml(g.label)}</strong><small>${g.items.length} arquivo(s) • ${done} lidos</small><button data-open-collection="${escapeHtml(g.key)}">Abrir coleção</button></div></article>`; }).join('');
+}
+function scrollFeatured(dir=1){ const host=$('#featuredCarousel'); if(!host)return; host.scrollBy({left:Math.max(260,Math.floor(host.clientWidth*.82))*dir,behavior:'smooth'}); }
+
+function cleanFolderLabel(path) {
+  const leaf = String(path || '').split('/').filter(Boolean).at(-1) || '';
+  if (!leaf || /^Biblioteca\s+\d+$/i.test(leaf)) return '';
+  return leaf.replace(/^\d+\s*[-–—]\s*/, '').replace(/\s*\([^)]*\)\s*$/g, '').trim();
+}
+function seriesLabel(name, folderPath = '') {
+  const folder = cleanFolderLabel(folderPath);
+  if (folder) return folder;
+  let s = String(name || '').replace(/\.(pdf|cbr|cbz|rar|zip)$/i, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\bSIX\b/gi, 'Seis')
+    .replace(/#\s*TPB\b/gi, ' ')
+    .replace(/\bvol(?:ume)?\.?\s*\d+\b/gi, ' ')
+    .replace(/#\s*\d+\b/g, ' ')
+    .replace(/\b\d{1,3}\s*\(de\s*\d+\)/gi, ' ')
+    .replace(/\b\d{1,3}\b/g, ' ')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return s || shortCover(name) || 'Sem coleção';
+}
+function seriesKeyFor(item) { return normalizeText(seriesLabel(item?.name, item?.folderPath)); }
+function collectionGroups(items = state.items) {
+  const map = new Map();
+  for (const item of items) {
+    const key = seriesKeyFor(item);
+    if (!map.has(key)) map.set(key, { key, label: seriesLabel(item.name, item.folderPath), items: [] });
+    map.get(key).items.push(item);
+  }
+  return [...map.values()].sort((a, b) => b.items.length - a.items.length || naturalSort(a.label, b.label));
+}
+function renderUniverseRails() {
+  const host = $('#universeRails'); if (!host) return;
+  if (state.collection || state.search || state.filter !== 'all' || state.category) { host.innerHTML=''; host.classList.add('hidden'); return; }
+  const groups = categoryGroups(sourcePool()).filter(g => g.items.length >= 2).slice(0, 7);
+  host.classList.toggle('hidden', !groups.length);
+  host.innerHTML = groups.map(g => {
+    const items = g.items.slice(0, 10);
+    return `<section class="universe-rail"><div class="section-head"><div><span class="eyebrow">${escapeHtml(g.label.toUpperCase())}</span><h2>${escapeHtml(g.label)}</h2></div><button class="ghost small" data-category="${escapeHtml(g.key)}">Ver tudo</button></div><div class="universe-track">${items.map(item => `<article class="mini-card card" data-id="${escapeHtml(item.id)}"><div class="mini-cover">${thumbUrl(item) ? `<img src="${thumbUrl(item)}" alt="" loading="lazy">` : `<span>${escapeHtml(shortCover(item.name))}</span>`}</div><strong>${escapeHtml(item.name)}</strong><button data-action="read">Ler</button></article>`).join('')}</div></section>`;
+  }).join('');
+}
+function renderContinueRail() {
+  const recent = currentPool().filter(i => {
+    const p = progress[i.id]; return p && p.percent > 0 && p.percent < 100;
+  }).sort((a, b) => (progress[b.id]?.updated || 0) - (progress[a.id]?.updated || 0)).slice(0, 10);
+  $('#continueSection').classList.toggle('hidden', !recent.length || !['all', 'reading'].includes(state.filter) || Boolean(state.collection));
+  $('#continueRail').innerHTML = recent.map(item => {
+    const pct = percentFor(item), thumb = thumbUrl(item);
+    return `<article class="continue-card" data-id="${escapeHtml(item.id)}"><div class="continue-thumb">${thumb ? `<img src="${thumb}" alt="" loading="lazy" onerror="this.remove()">` : escapeHtml(shortCover(item.name).slice(0,18))}</div><div class="continue-info"><strong>${escapeHtml(item.name)}</strong><small>${Math.round(pct)}% • pág. ${(progress[item.id]?.page || 0) + 1}</small><button data-continue="${escapeHtml(item.id)}">Continuar</button></div></article>`;
+  }).join('');
+}
+function sourceKeyFor(item) {
+  if (!item) return 'other';
+  if (item.localFile || item.offline || item.offlineOriginId) return 'offline';
+  const path = String(item.folderPath || '');
+  const match = path.match(/^Biblioteca\s+(\d+)(?:\/|$)/i);
+  return match ? `library-${match[1]}` : 'other';
+}
+function sourceLabelFor(item) {
+  const key = sourceKeyFor(item);
+  if (key === 'offline') return 'Offline/local';
+  const match = key.match(/^library-(\d+)$/);
+  return match ? `Biblioteca ${match[1]}` : 'Catálogo local';
+}
+function libraryCounts() {
+  const counts = { offline:0, other:0 };
+  for (let i = 0; i < (CONFIG.folderIds || []).length; i++) counts[`library-${i+1}`] = 0;
+  for (const item of state.items) counts[sourceKeyFor(item)] = (counts[sourceKeyFor(item)] || 0) + 1;
+  return counts;
+}
+
+function itemCard(item) {
+  const type = extType(item), pct = percentFor(item), thumb = thumbUrl(item);
+  const status = pct >= 100 ? 'concluído' : pct ? `${Math.round(pct)}% lido` : 'não iniciado';
+  const offline = state.offlineIds.has(item.offlineOriginId || item.id);
+  const offlineBusy = state.offlineBusy.has(item.offlineOriginId || item.id);
+  return `<article class="card ${offline ? 'is-offline' : ''}" data-id="${escapeHtml(item.id)}">
+    <div class="cover">
+      ${thumb ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      <span class="badge">${type === 'pdf' ? 'PDF' : type === 'comic' ? 'CBR/CBZ' : 'ARQ'}</span>${offline ? '<span class="offline-badge">OFFLINE</span>' : ''}
+      <button class="fav ${favorites.has(item.id) ? 'on' : ''}" data-action="fav" title="Favoritar">★</button>
+      <div class="cover-word">${escapeHtml(shortCover(item.name))}</div>
+    </div>
+    <div class="card-body">
+      <div class="title">${escapeHtml(item.name)}</div>
+      <div class="meta"><span>${bytes(item.size)}</span><span>${status}</span></div><div class="source-line"><span class="source-chip source-${escapeHtml(sourceKeyFor(item))}">${escapeHtml(sourceLabelFor(item))}</span>${item.folderPath ? `<span class="source-path" title="${escapeHtml(item.folderPath)}">${escapeHtml(cleanFolderLabel(item.folderPath) || item.folderPath)}</span>` : ''}</div>
+      <div class="progress"><i style="width:${pct}%"></i></div>
+      <div class="card-actions"><button data-action="read">${pct >= 100 ? 'Ler novamente' : pct ? 'Continuar' : 'Ler agora'}</button><button class="secondary offline-action ${offline ? 'on' : ''}" data-action="offline" title="${offline ? 'Remover do offline' : 'Salvar para ler offline'}">${offlineBusy ? '…' : offline ? '✓' : '☁'}</button><button class="secondary download-action" data-action="download" title="Baixar arquivo">⇩</button>${item.localFile ? '' : '<button class="secondary" data-action="drive" title="Abrir no Drive">↗</button>'}</div>
+    </div>
+  </article>`;
+}
+function isNewItem(item, days = 30) {
+  const ts = Date.parse(item?.modifiedTime || '');
+  if (!Number.isFinite(ts)) return false;
+  return Date.now() - ts <= days * 86400000 && Date.now() >= ts;
+}
+function resetRenderLimit() { state.renderLimit = 60; }
+function filtered() {
+  const arr = state.items.filter(item => {
+    const t = extType(item), p = progress[item.id];
+    if (state.collection && seriesKeyFor(item) !== state.collection) return false;
+    if (state.source !== 'all' && sourceKeyFor(item) !== state.source) return false;
+    if (state.category && categoryKeyFor(item) !== state.category) return false;
+    if (state.filter === 'favorites' && !favorites.has(item.id)) return false;
+    if (state.filter === 'reading' && !(p && p.percent > 0 && p.percent < 100)) return false;
+    if (state.filter === 'completed' && !(p && p.percent >= 100)) return false;
+    if (state.filter === 'offline' && !state.offlineIds.has(item.offlineOriginId || item.id)) return false;
+    if (state.filter === 'new' && !isNewItem(item)) return false;
+    if (state.filter === 'pdf' && t !== 'pdf') return false;
+    if (state.filter === 'comic' && t !== 'comic') return false;
+    if (state.search && !normalizeText(`${item.name} ${item.folderPath || ''}`).includes(state.search)) return false;
+    return true;
+  });
+  arr.sort((a, b) => state.sort === 'name' ? naturalSort(a.name, b.name)
+    : state.sort === 'name-desc' ? naturalSort(b.name, a.name)
+    : state.sort === 'size' ? (a.size || 0) - (b.size || 0)
+    : state.sort === 'size-desc'
