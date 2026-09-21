@@ -1,0 +1,50 @@
+name: Empacotar duas versões
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/package-variants.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar versão com Drive
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: full
+          fetch-depth: 1
+
+      - name: Baixar versão sem Drive
+        uses: actions/checkout@v4
+        with:
+          ref: sem-drive
+          path: clean
+          fetch-depth: 1
+
+      - name: Limpar arquivos de desenvolvimento
+        run: |
+          rm -rf full/.git full/.github full/tests full/tools
+          rm -rf clean/.git clean/.github clean/tests clean/tools
+
+      - name: Criar ZIPs
+        run: |
+          cd full
+          zip -qr ../Manga-HQ-Reader-v2.3.1-COM-DRIVE.zip .
+          cd ../clean
+          zip -qr ../Manga-HQ-Reader-v2.3.1-SEM-DRIVE.zip .
+
+      - name: Publicar ZIPs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Manga-HQ-Reader-duas-versoes
+          path: |
+            Manga-HQ-Reader-v2.3.1-COM-DRIVE.zip
+            Manga-HQ-Reader-v2.3.1-SEM-DRIVE.zip
+          if-no-files-found: error
+          retention-days: 30
