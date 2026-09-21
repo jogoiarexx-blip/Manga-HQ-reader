@@ -3,10 +3,10 @@ const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const CONFIG = {
   appVersion: '2.3.1',
-  folderIds: ['1e-gclwa21fdNBuGyoCaucMUEekTws8_g', '1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', '1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', '1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', '1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
-  folderUrls: ['https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g', 'https://drive.google.com/drive/folders/1Ly_9LzZht815cVzUsLPfR4BwvSYOilzK', 'https://drive.google.com/drive/folders/1VmG0IF3bZwRXHxQ-k1g7euycikJAKZPw', 'https://drive.google.com/drive/folders/1xVUuHmicfUlKj30fZ7h0vMf9ipdzvFjy', 'https://drive.google.com/drive/folders/1sZ0-6AUXUdcLXPN6uDMbSAjk8qs_Wq7F'],
-  folderId: '1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
-  folderUrl: 'https://drive.google.com/drive/folders/1e-gclwa21fdNBuGyoCaucMUEekTws8_g',
+  folderIds: [],
+  folderUrls: [],
+  folderId: '',
+  folderUrl: '',
   driveApiKey: '',
   largeArchiveWarningMB: 180,
   pageCacheLimit: 12,
