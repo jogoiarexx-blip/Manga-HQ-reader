@@ -1,0 +1,46 @@
+name: Apply Manga HQ Reader v2.1.0
+
+on:
+  push:
+    paths:
+      - 'release-v2.1.0.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f release-v2.1.0.zip ]; then
+            echo "Release archive already consumed."
+            exit 0
+          fi
+          rm -rf .release-v2.1.0
+          mkdir .release-v2.1.0
+          unzip -q release-v2.1.0.zip -d .release-v2.1.0
+          SRC="$(find .release-v2.1.0 -mindepth 1 -maxdepth 1 -type d -name 'Manga-HQ-Reader*' | head -n 1)"
+          test -n "$SRC"
+          rsync -a --delete "$SRC"/ ./ --exclude '.git/' --exclude '.github/' --exclude 'release-v2.1.0.zip'
+          rm -rf .release-v2.1.0 release-v2.1.0.zip
+
+      - name: Commit published site
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to publish."
+            exit 0
+          fi
+          git commit -m "Publish Manga HQ Reader v2.1.0"
+          git push
