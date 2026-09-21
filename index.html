@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111217" />
   <meta name="description" content="Leitor de mangás e HQs em PDF, CBR, CBZ e pastas WebP conectado a bibliotecas do Google Drive." />
-  <title>Manga HQ Reader v2.2.5</title>
+  <title>Manga HQ Reader v2.3.0</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-64.png" type="image/png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
@@ -67,7 +67,7 @@
         <div id="catalogNotice" class="catalog-notice hidden"><strong>Catálogo local</strong><span id="catalogNoticeText"></span></div>
 
         <div id="apiNotice" class="notice hidden">
-          <div><strong>Leitura direta pelo Google Drive</strong><span>Configure uma chave da Google Drive API. Pastas com manifest.json e páginas WebP são abertas página a página, sem baixar o quadrinho inteiro.</span></div>
+          <div><strong>Leitura direta pelo Google Drive</strong><span>HQs WebP já catalogadas abrem página a página diretamente do Drive. Configure uma chave da Google Drive API para descobrir novas pastas e sincronizar alterações.</span></div>
           <button id="noticeSettingsBtn">Configurar</button>
         </div>
 
@@ -186,7 +186,7 @@
       <div class="modal-head"><div><strong id="settingsTitle">Configurações do Drive</strong><small>GitHub Pages • sem servidor</small></div><button id="closeSettings" class="icon-btn">×</button></div>
       <div class="modal-body">
         <label class="field"><span>Google Drive API Key</span><input id="apiKeyInput" type="password" autocomplete="off" placeholder="Cole sua chave aqui" /></label>
-        <p class="help">As pastas públicas já estão configuradas. A chave permite sincronizar o acervo e ler pastas de páginas WebP diretamente no navegador. Restrinja a chave ao endereço do seu GitHub Pages e habilite somente a Google Drive API.</p>
+        <p class="help">As pastas públicas já estão configuradas. HQs WebP presentes no catálogo podem ser lidas sem chave. A Google Drive API Key serve para descobrir novos arquivos, atualizar as bibliotecas e melhorar a compatibilidade com PDFs/arquivos compactados. Restrinja a chave ao endereço do seu GitHub Pages e habilite somente a Google Drive API.</p>
         <div class="settings-grid">
           <label class="field"><span>Modo padrão</span><select id="defaultModeSelect"><option value="page">Página única</option><option value="spread">Página dupla</option><option value="vertical">Vertical contínuo</option><option value="webtoon">Webtoon</option></select></label>
           <label class="field"><span>Direção padrão</span><select id="directionSelect"><option value="ltr">Esquerda → direita</option><option value="rtl">Direita → esquerda (mangá)</option></select></label>
@@ -209,7 +209,7 @@
           <summary>Como ler os arquivos do Drive no app?</summary>
           <ol>
             <li>Deixe as pastas como públicas em <b>Qualquer pessoa com o link</b>.</li>
-            <li>Crie uma API Key no Google Cloud com a <b>Google Drive API</b> ativada.</li>
+            <li>Para sincronizar novidades automaticamente, crie uma API Key no Google Cloud com a <b>Google Drive API</b> ativada.</li>
             <li>Restrinja a chave ao endereço do seu GitHub Pages e à Google Drive API.</li>
             <li>Cole a chave acima, toque em <b>Testar conexão</b> e depois em <b>Salvar e sincronizar</b>.</li>
             <li>Na biblioteca, toque em <b>Ler agora</b>. Pastas com <b>manifest.json</b> + páginas WebP abrem página a página; PDF, CBR e CBZ continuam compatíveis.</li>
@@ -245,7 +245,7 @@
   <input id="localFileInput" class="hidden" type="file" accept=".pdf,.cbr,.cbz,.rar,.zip,application/pdf,application/x-rar-compressed,application/zip" />
   <input id="importDataInput" class="hidden" type="file" accept="application/json,.json" />
 
-  <script src="./config.js?v=2.2.5"></script>
-  <script type="module" src="./js/app.js?v=2.2.5"></script>
+  <script src="./config.js?v=2.3.0"></script>
+  <script type="module" src="./js/app.js?v=2.3.0"></script>
 </body>
 </html>
