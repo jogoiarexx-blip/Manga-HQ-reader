@@ -32,7 +32,7 @@ Nome da Série/
 
 ## Destaques da v2.1.0
 
-- sincronização independente das 4 bibliotecas do Google Drive, com progresso, cancelamento e fallback por biblioteca;
+- sincronização independente das 5 bibliotecas do Google Drive, com progresso, cancelamento e fallback por biblioteca;
 - miniaturas de páginas no leitor, com salto direto;
 - preferências de leitura salvas por HQ/mangá (modo, direção, ajuste e corte de margens);
 - ajuste Página/Largura/Altura e corte leve de margens;
@@ -65,7 +65,7 @@ Leitor estático de mangás/HQs feito para rodar diretamente no GitHub Pages, se
 
 - PDF.js, CBR/CBZ/RAR/ZIP;
 - offline via IndexedDB;
-- quatro bibliotecas do Google Drive;
+- cinco bibliotecas do Google Drive;
 - Batcaverna como fonte externa;
 - favoritos, coleções e continuar lendo;
 - PWA e otimizações para desktop/celular.
@@ -155,7 +155,7 @@ O leitor usa PDF.js e mantém progresso real por página. PDFs protegidos por se
 
 ## Três bibliotecas do Google Drive
 
-Esta versão mantém quatro pastas do Google Drive configuradas ao mesmo tempo. Sem chave de API, esta versão já abre com um snapshot local de 332 itens, incluindo 102 novidades da Biblioteca 4. Com uma Google Drive API Key, o botão Atualizar percorre recursivamente as quatro bibliotecas e suas subpastas, encontra alterações mais recentes, mescla os arquivos e remove duplicados pelo ID do Drive.
+Esta versão mantém cinco pastas do Google Drive configuradas ao mesmo tempo. Sem chave de API, esta versão já abre com um snapshot local de 337 itens, incluindo as novidades da Biblioteca 4 e Godzilla vs Power Rangers na Biblioteca 5. Com uma Google Drive API Key, o botão Atualizar percorre recursivamente as cinco bibliotecas e suas subpastas, encontra alterações mais recentes, mescla os arquivos e remove duplicados pelo ID do Drive.
 
 
 ## Revisão geral
@@ -163,7 +163,7 @@ Esta versão mantém quatro pastas do Google Drive configuradas ao mesmo tempo. 
 - correção do cache PWA para não apagar caches de outros projetos do mesmo github.io
 - service worker atualizado e verificação de update ao abrir o app
 - 404 antigo removido; agora é um redirecionador leve para a biblioteca atual
-- botão Pastas Drive mostra as quatro bibliotecas separadamente
+- botão Pastas Drive mostra as cinco bibliotecas separadamente
 - coleções agora aproveitam o caminho real das subpastas do Drive
 - busca também encontra nomes de pastas/coleções
 - downloads do leitor e salvamentos offline não se cancelam mais mutuamente
@@ -184,13 +184,13 @@ O leitor possui modo de desempenho Automático, Econômico e Qualidade máxima. 
 ## Batcaverna como fonte externa
 
 - adiciona **Batcaverna — Acervo Externo** à janela de fontes;
-- mantém as quatro bibliotecas do Drive sincronizadas separadamente;
+- mantém as cinco bibliotecas do Drive sincronizadas separadamente;
 - oferece botões para abrir o site oficial e o Drive externo;
 - não copia nem redistribui os arquivos externos dentro do projeto.
 
 
 ## Google Drive
-Para sincronizar e ler diretamente no leitor interno, mantenha as pastas públicas, ative a Google Drive API em um projeto do Google Cloud e informe uma API Key restrita ao domínio do GitHub Pages. O app inclui um botão de teste de conexão nas Configurações. Arquivos privados exigem OAuth 2.0.
+Para descobrir novidades e sincronizar o catálogo automaticamente, mantenha as pastas públicas, ative a Google Drive API em um projeto do Google Cloud e informe uma API Key restrita ao domínio do GitHub Pages. O app inclui um botão de teste de conexão nas Configurações. Arquivos privados exigem OAuth 2.0.
 
 
 ## Biblioteca 3 — Batman
