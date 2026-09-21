@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'manga-hq-reader-ghpages-';
-const CACHE = `${CACHE_PREFIX}v2.1.0`;
+const CACHE = `${CACHE_PREFIX}v2.2.0`;
 const BASE = new URL('./', self.location.href);
 const CORE = [
   './', './index.html', './css/app.css', './js/app.js', './config.js',
