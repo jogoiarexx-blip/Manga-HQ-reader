@@ -415,7 +415,9 @@ async function loadStaticCatalog() {
   if (!r.ok) throw new Error(`Catálogo local: HTTP ${r.status}`);
   const bundled = uniqueItems(await r.json());
   const cached = readJson(LS.catalog, []);
-  return uniqueItems([...bundled, ...(Array.isArray(cached) ? cached : [])]);
+  // Itens do catálogo publicado têm prioridade sobre versões antigas salvas no navegador.
+  // Assim, novos metadados (como drivePages) não são apagados por um cache legado.
+  return uniqueItems([...(Array.isArray(cached) ? cached : []), ...bundled]);
 }
 function saveCatalogCache(items) {
   const clean = uniqueItems(items).map(({ localFile, offline, ...item }) => item);
