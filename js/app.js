@@ -1794,6 +1794,11 @@ function closeReaderControls() {
   $('#readerMenuBtn')?.setAttribute('aria-expanded','false');
 }
 let readerControlsTimer = 0;
+function keepReaderControlsAlive() {
+  if (!matchMedia('(max-width:850px)').matches || !$('#reader').classList.contains('controls-open')) return;
+  clearTimeout(readerControlsTimer);
+  readerControlsTimer = setTimeout(closeReaderControls, 6000);
+}
 function toggleReaderControls() {
   const open = $('#reader').classList.toggle('controls-open');
   $('#readerMenuBtn')?.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -1801,6 +1806,7 @@ function toggleReaderControls() {
   if (open && matchMedia('(max-width:850px)').matches) readerControlsTimer = setTimeout(closeReaderControls, 6000);
 }
 $('#readerMenuBtn')?.addEventListener('click', toggleReaderControls);
+$('.reader-controls')?.addEventListener('click', keepReaderControlsAlive);
 
 $('#closeReader').addEventListener('click', closeReader);
 $('#downloadCurrentBtn').addEventListener('click', () => downloadItem(state.current));
@@ -1815,7 +1821,6 @@ $('#pageNumberInput')?.addEventListener('change', e => { const n = Number(e.targ
 $('#pageNumberInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); const n = Number(e.target.value || 1); setPage(n - 1); } });
 $('#loadMoreBtn')?.addEventListener('click', () => { state.renderLimit += 60; render(); });
 $('#modeBtn').addEventListener('click', async () => {
-  if (window.matchMedia('(max-width:850px)').matches) closeReaderControls();
   if (!state.pages.length) return;
   stopAutoScroll();
   const modes = ['page','spread','vertical','webtoon'];
@@ -1842,7 +1847,6 @@ $('#fitBtn').addEventListener('click', async () => {
 });
 $('#trimBtn')?.addEventListener('click', async () => { state.trimMargins=!state.trimMargins; $('#reader')?.classList.toggle('trim-margins',state.trimMargins); persistCurrentReaderPrefs(); updateReaderPrefsUI(); await renderReaderPages(); });
 $('#directionBtn').addEventListener('click', async () => {
-  if (window.matchMedia('(max-width:850px)').matches) closeReaderControls();
   state.direction = state.direction === 'rtl' ? 'ltr' : 'rtl';
   prefs.direction = state.direction; savePrefs(); persistCurrentReaderPrefs(); updateReaderPrefsUI(); updateProgress();
   if (state.pages.length && effectiveMode() === 'spread') await renderReaderPages();
