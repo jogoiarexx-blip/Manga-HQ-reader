@@ -341,11 +341,13 @@ function uniqueItems(items) {
   return [...new Map(items.filter(x => x?.id && x?.name).map(x => [x.id, { ...x, size: Number(x.size || 0) }])).values()];
 }
 function thumbUrl(item) {
+  if (item?.sourceUrl) return item.thumbnailLink || '';
   if (item.localFile && !item.thumbnailLink) return '';
   if (extType(item) === 'pages' && item.coverPageId) return item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.coverPageId)}&sz=w420`;
   return item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w420`;
 }
 function driveViewUrl(item) {
+  if (item?.sourceUrl) return item.sourceUrl;
   if (extType(item) === 'pages' && item.driveFolderId) return `https://drive.google.com/drive/folders/${encodeURIComponent(item.driveFolderId)}`;
   const u = new URL(`https://drive.google.com/file/d/${encodeURIComponent(item.id)}/view`); if (item.resourceKey) u.searchParams.set('resourcekey', item.resourceKey); return u.href;
 }
@@ -362,6 +364,7 @@ function sanitizeFilename(name) {
 }
 function directDownloadUrl(item) {
   if (!item || item.localFile) return '';
+  if (item.sourceUrl) return item.sourceUrl;
   const u = new URL('https://drive.usercontent.google.com/download');
   u.searchParams.set('id', item.id);
   u.searchParams.set('export', 'download');
@@ -1012,6 +1015,8 @@ async function openPdf(item, token) {
     const options = { disableAutoFetch: false, disableStream: false, disableRange: false };
     if (item.localFile) {
       options.data = await item.localFile.arrayBuffer();
+    } else if (item.sourceUrl) {
+      options.url = item.sourceUrl;
     } else {
       const key = getApiKey();
       if (key) {
@@ -1042,8 +1047,8 @@ async function openPdf(item, token) {
   } catch (err) {
     if (token !== state.openToken || err?.name === 'AbortError') return;
     $('#readerLoading').classList.add('hidden');
-    const noKeyHint = !item.localFile && !getApiKey() ? ' Configure a Google Drive API Key para usar o leitor PDF próprio com arquivos do Drive.' : '';
-    showReaderError('Não foi possível abrir este PDF', `${err.message || err}${noKeyHint}`, !item.localFile);
+    const noKeyHint = !item.localFile && !item.sourceUrl && !getApiKey() ? ' Configure a Google Drive API Key para usar o leitor PDF próprio com arquivos do Drive.' : '';
+    showReaderError('Não foi possível abrir este PDF', `${err.message || err}${noKeyHint}`, !item.localFile && !item.sourceUrl);
   }
 }
 
@@ -1085,13 +1090,17 @@ async function fetchArrayBufferWithProgress(url, headers = {}, signal, token) {
 async function downloadDriveFile(item, token, purpose = 'reader') {
   const key = getApiKey();
   const attempts = [];
-  if (key) {
-    const api = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(item.id)}`);
-    api.searchParams.set('alt', 'media'); api.searchParams.set('key', key);
-    const headers = item.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${item.id}/${item.resourceKey}` } : {};
-    attempts.push({ url: api.href, headers, label: 'Drive API' });
+  if (item?.sourceUrl) {
+    attempts.push({ url: item.sourceUrl, headers: {}, label: 'fonte externa' });
+  } else {
+    if (key) {
+      const api = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(item.id)}`);
+      api.searchParams.set('alt', 'media'); api.searchParams.set('key', key);
+      const headers = item.resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${item.id}/${item.resourceKey}` } : {};
+      attempts.push({ url: api.href, headers, label: 'Drive API' });
+    }
+    attempts.push({ url: `https://drive.usercontent.google.com/download?id=${encodeURIComponent(item.id)}&export=download&confirm=t`, headers: {}, label: 'link público' });
   }
-  attempts.push({ url: `https://drive.usercontent.google.com/download?id=${encodeURIComponent(item.id)}&export=download&confirm=t`, headers: {}, label: 'link público' });
   const controller = new AbortController();
   const offlineId = item.offlineOriginId || item.id;
   if (purpose === 'reader') {
@@ -1114,6 +1123,7 @@ async function downloadDriveFile(item, token, purpose = 'reader') {
     if (purpose === 'reader' && state.readerDownloadController === controller) state.readerDownloadController = null;
     if (purpose !== 'reader' && state.offlineControllers.get(offlineId) === controller) state.offlineControllers.delete(offlineId);
   }
+  if (item?.sourceUrl) throw lastError || new Error('Falha ao baixar da fonte externa.');
   if (!key) throw new Error('O navegador não conseguiu baixar este CBR/CBZ pelo link público por causa das restrições de CORS do Google Drive. Configure uma Google Drive API Key restrita ao seu GitHub Pages ou abra um arquivo local.');
   throw lastError || new Error('Falha ao baixar do Google Drive.');
 }
